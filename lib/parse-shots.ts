@@ -3,6 +3,34 @@ import { Shot } from '@/types/shot-data';
 
 const FPS = 30; // Assuming 30 FPS for the video
 
+// Calculate visual zone from normalized coordinates
+// Matches the visual zone layout in CourtHeatmap component (FULL COURT with 4 rows)
+function getVisualZone(x: number, y: number): string {
+  // x: 0-1 (left to right)
+  // y: 0-1 (top to bottom)
+
+  // Determine column (left, middle, right)
+  let col: number;
+  if (x < 0.333) col = 0; // left
+  else if (x < 0.667) col = 1; // middle
+  else col = 2; // right
+
+  // Determine row (4 EQUAL rows of 25% each)
+  if (y < 0.25) {
+    // Row 1 (top back court): zones 5, 4, 3 (left to right)
+    return `zone-${5 - col}`;
+  } else if (y < 0.5) {
+    // Row 2 (top front court): zones 2, 1, 0 (left to right)
+    return `zone-${2 - col}`;
+  } else if (y < 0.75) {
+    // Row 3 (bottom front court): zones 0, 1, 2 (left to right)
+    return `zone-${col}`;
+  } else {
+    // Row 4 (bottom back court): zones 3, 4, 5 (left to right)
+    return `zone-${3 + col}`;
+  }
+}
+
 export async function parseShotsCSV(csvPath: string): Promise<Shot[]> {
   const response = await fetch(csvPath);
   const csvText = await response.text();
@@ -22,6 +50,10 @@ export async function parseShotsCSV(csvPath: string): Promise<Shot[]> {
           // Calculate timestamp from frame number
           const timestamp = row.frame / FPS;
 
+          // Calculate visual zone from coordinates (overrides CSV zone)
+          const [x, y] = normalized_coordinates;
+          const visualZone = getVisualZone(x, y);
+
           return {
             index,
             shot_label: row.shot_label || '',
@@ -31,7 +63,7 @@ export async function parseShotsCSV(csvPath: string): Promise<Shot[]> {
             loc_3d,
             player_shooting: row.player_shooting || '',
             pred_conf: row.pred_conf || -1,
-            zone_shuttle: row.zone_shuttle || '',
+            zone_shuttle: visualZone, // Use calculated zone based on coordinates
             zone_player: row.zone_player || '',
             shot_direction: row.shot_direction || '',
             frame_diff: row.frame_diff || 0,

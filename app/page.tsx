@@ -1,27 +1,51 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Shot } from '@/types/shot-data';
-import { parseShotsCSV, getShotTypes, getPlayers, filterShots } from '@/lib/parse-shots';
+import { Shot, Rally } from '@/types/shot-data';
+import { parseShotsCSV, getShotTypes, getPlayers } from '@/lib/parse-shots';
+import { ShotFilter } from '@/lib/ollama-client';
+import { extractRallies, findRallyForShot } from '@/lib/rally-analyzer';
+import NLPSearchBar from '@/components/NLPSearchBar';
+import CourtHeatmap, { SHOT_TYPE_COLORS } from '@/components/CourtHeatmap';
+import VideoTimelineScroller from '@/components/VideoTimelineScroller';
+import RallyTimeline from '@/components/RallyTimeline';
+import EnhancedFilters, { FilterState } from '@/components/EnhancedFilters';
+import StatsDashboard from '@/components/StatsDashboard';
+import { ChartBarIcon } from '@heroicons/react/24/outline';
 
 export default function Home() {
   const [shots, setShots] = useState<Shot[]>([]);
   const [filteredShots, setFilteredShots] = useState<Shot[]>([]);
+  const [rallies, setRallies] = useState<Rally[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Filters
-  const [selectedShotType, setSelectedShotType] = useState<string>('');
-  const [selectedPlayer, setSelectedPlayer] = useState<string>('');
-  const [minRating, setMinRating] = useState<number>(0);
-  const [winnerError, setWinnerError] = useState<string>('');
-  const [searchQuery, setSearchQuery] = useState('');
-
-  // Video player
+  // Video state
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Available filter options
+  // UI state
+  const [showStats, setShowStats] = useState(false);
+  const [heatmapColorMode, setHeatmapColorMode] = useState<'type' | 'rating' | 'outcome'>('type');
+
+  // Filter state
+  const [filters, setFilters] = useState<FilterState>({
+    shotTypes: [],
+    players: [],
+    zones: [],
+    directions: [],
+    courtSide: '',
+    minRating: 0,
+    maxRating: 13,
+    winnerError: '',
+    rallyLengthMin: 0,
+    rallyLengthMax: 100,
+  });
+
+  // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
   const [players, setPlayers] = useState<string[]>([]);
 
@@ -35,6 +59,11 @@ export default function Home() {
         setFilteredShots(parsedShots);
         setShotTypes(getShotTypes(parsedShots));
         setPlayers(getPlayers(parsedShots));
+
+        // Extract rallies
+        const extractedRallies = extractRallies(parsedShots);
+        setRallies(extractedRallies);
+
         setLoading(false);
       } catch (err) {
         console.error('Error loading shots:', err);
@@ -47,24 +76,106 @@ export default function Home() {
 
   // Apply filters
   useEffect(() => {
-    let filtered = filterShots(shots, {
-      shotType: selectedShotType || undefined,
-      player: selectedPlayer || undefined,
-      minRating: minRating || undefined,
-      winnerError: winnerError || undefined,
-    });
+    let filtered = shots;
 
-    // Text search
-    if (searchQuery) {
-      filtered = filtered.filter(shot =>
-        shot.shot_label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        shot.player_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        shot.zone_shuttle.toLowerCase().includes(searchQuery.toLowerCase())
-      );
+    // Shot types
+    if (filters.shotTypes.length > 0) {
+      filtered = filtered.filter((shot) => filters.shotTypes.includes(shot.shot_label));
+    }
+
+    // Players
+    if (filters.players.length > 0) {
+      filtered = filtered.filter((shot) => filters.players.includes(shot.player_id));
+    }
+
+    // Zones
+    if (filters.zones.length > 0) {
+      filtered = filtered.filter((shot) => filters.zones.includes(shot.zone_shuttle));
+    }
+
+    // Directions
+    if (filters.directions.length > 0) {
+      filtered = filtered.filter((shot) => filters.directions.includes(shot.shot_direction));
+    }
+
+    // Court side
+    if (filters.courtSide) {
+      filtered = filtered.filter((shot) => shot.player_court_side === filters.courtSide);
+    }
+
+    // Rating
+    filtered = filtered.filter(
+      (shot) => shot.shot_rating >= filters.minRating && shot.shot_rating <= filters.maxRating
+    );
+
+    // Winner/Error
+    if (filters.winnerError) {
+      filtered = filtered.filter((shot) => shot.winner_error === filters.winnerError);
     }
 
     setFilteredShots(filtered);
-  }, [shots, selectedShotType, selectedPlayer, minRating, winnerError, searchQuery]);
+  }, [shots, filters]);
+
+  // Video time update
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+
+      // Find shot closest to current time (only when playing)
+      if (isPlaying) {
+        const closestShot = filteredShots.reduce((closest, shot) => {
+          if (!shot.timestamp) return closest;
+          const timeDiff = Math.abs(shot.timestamp - video.currentTime);
+          const closestDiff = closest.timestamp ? Math.abs(closest.timestamp - video.currentTime) : Infinity;
+          return timeDiff < closestDiff && timeDiff < 0.5 ? shot : closest;
+        }, filteredShots[0]);
+
+        if (closestShot && closestShot.index !== selectedShot?.index) {
+          setSelectedShot(closestShot);
+        }
+      }
+    };
+
+    const handleLoadedMetadata = () => {
+      setVideoDuration(video.duration);
+    };
+
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+    };
+  }, [filteredShots, selectedShot, isPlaying]);
+
+  // Handle search
+  const handleSearch = (query: string, filter: ShotFilter) => {
+    // Apply LLM-generated filters
+    const newFilters: FilterState = {
+      shotTypes: filter.shotType || [],
+      players: filter.player || [],
+      zones: filter.zone || [],
+      directions: filter.direction || [],
+      courtSide: filter.courtSide || '',
+      minRating: filter.minRating || 0,
+      maxRating: filter.maxRating || 13,
+      winnerError: filter.winnerError || '',
+      rallyLengthMin: filter.rallyLength?.min || 0,
+      rallyLengthMax: filter.rallyLength?.max || 100,
+    };
+    setFilters(newFilters);
+  };
 
   // Jump to shot in video
   const jumpToShot = (shot: Shot) => {
@@ -73,6 +184,39 @@ export default function Home() {
       videoRef.current.currentTime = shot.timestamp;
       videoRef.current.play();
     }
+  };
+
+  // Seek video
+  const seekVideo = (time: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+    }
+  };
+
+  // Handle zone click on heatmap
+  const handleZoneClick = (zone: string) => {
+    setFilters((prev) => ({
+      ...prev,
+      zones: prev.zones.includes(zone)
+        ? prev.zones.filter((z) => z !== zone)
+        : [...prev.zones, zone],
+    }));
+  };
+
+  // Clear filters
+  const clearFilters = () => {
+    setFilters({
+      shotTypes: [],
+      players: [],
+      zones: [],
+      directions: [],
+      courtSide: '',
+      minRating: 0,
+      maxRating: 13,
+      winnerError: '',
+      rallyLengthMin: 0,
+      rallyLengthMax: 100,
+    });
   };
 
   const formatTime = (seconds: number) => {
@@ -85,11 +229,12 @@ export default function Home() {
     return (
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center">
         <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
           <div className="text-xl font-semibold text-zinc-900 dark:text-white mb-2">
             Loading shot data...
           </div>
           <div className="text-sm text-zinc-600 dark:text-zinc-400">
-            Parsing CSV file
+            Parsing CSV file and extracting rallies
           </div>
         </div>
       </div>
@@ -111,145 +256,222 @@ export default function Home() {
     );
   }
 
+  const currentRally = selectedShot ? findRallyForShot(selectedShot, rallies) : null;
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
       {/* Header */}
-      <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
-            Shot Searcher
-          </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            {shots.length} total shots | {filteredShots.length} matching filters
-          </p>
+      <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-20">
+        <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
+                Shot Searcher
+              </h1>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                {shots.length} total shots | {filteredShots.length} matching filters
+              </p>
+            </div>
+            <button
+              onClick={() => setShowStats(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              <ChartBarIcon className="h-5 w-5" />
+              <span className="hidden sm:inline">Statistics</span>
+            </button>
+          </div>
+
+          {/* NLP Search Bar */}
+          <NLPSearchBar onSearch={handleSearch} loading={loading} />
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Main Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left: Filters & Search */}
-          <div className="lg:col-span-1 space-y-4">
-            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow p-4 space-y-4">
-              <h2 className="font-semibold text-zinc-900 dark:text-white">Filters</h2>
-
-              {/* Search */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Search
-                </label>
-                <input
-                  type="text"
-                  placeholder="Search shots..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm"
-                />
-              </div>
-
-              {/* Shot Type */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Shot Type
-                </label>
-                <select
-                  value={selectedShotType}
-                  onChange={(e) => setSelectedShotType(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm"
-                >
-                  <option value="">All Types</option>
-                  {shotTypes.map(type => (
-                    <option key={type} value={type}>{type}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Player */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Player
-                </label>
-                <select
-                  value={selectedPlayer}
-                  onChange={(e) => setSelectedPlayer(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm"
-                >
-                  <option value="">All Players</option>
-                  {players.map(player => (
-                    <option key={player} value={player}>{player}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Min Rating */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Min Rating: {minRating}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="10"
-                  step="0.5"
-                  value={minRating}
-                  onChange={(e) => setMinRating(parseFloat(e.target.value))}
+          {/* Left Column: Video + Heatmap */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* Video Player and Court Heatmap */}
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+              {/* Video Player */}
+              <div className="md:col-span-3 bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
+                <video
+                  ref={videoRef}
+                  src="/data/original-video.mp4"
+                  controls
                   className="w-full"
+                >
+                  Your browser does not support the video tag.
+                </video>
+                {selectedShot && (
+                  <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-zinc-900 dark:text-white">
+                          {selectedShot.shot_label} by {selectedShot.player_id}
+                        </h3>
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+                          Landing: {selectedShot.zone_shuttle} | {selectedShot.shot_direction}
+                          {selectedShot.winner_error && (
+                            <span className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
+                              selectedShot.winner_error === 'winner'
+                                ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300'
+                            }`}>
+                              {selectedShot.winner_error}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm font-medium text-zinc-900 dark:text-white">
+                          {formatTime(selectedShot.timestamp || 0)}
+                        </div>
+                        {selectedShot.shot_rating > 0 && (
+                          <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                            ⭐ {selectedShot.shot_rating.toFixed(1)}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Court Heatmap */}
+              <div className="md:col-span-2 bg-white dark:bg-zinc-800 rounded-lg shadow p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-zinc-900 dark:text-white text-sm">
+                      Court Heatmap
+                    </h3>
+                    {filters.zones.length > 0 && (
+                      <button
+                        onClick={() => setFilters((prev) => ({ ...prev, zones: [] }))}
+                        className="text-xs px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                      >
+                        Clear Zones ({filters.zones.length})
+                      </button>
+                    )}
+                  </div>
+                  <select
+                    value={heatmapColorMode}
+                    onChange={(e) => setHeatmapColorMode(e.target.value as any)}
+                    className="text-xs px-2 py-1 border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white"
+                  >
+                    <option value="type">By Type</option>
+                    <option value="rating">By Rating</option>
+                    <option value="outcome">By Outcome</option>
+                  </select>
+                </div>
+                <div className="flex items-start gap-3 h-[400px]">
+                  <div className="flex-1 h-full">
+                    <CourtHeatmap
+                      shots={filteredShots}
+                      highlightedShot={isPlaying ? selectedShot : null}
+                      onZoneClick={handleZoneClick}
+                      colorMode={heatmapColorMode}
+                      selectedZones={filters.zones}
+                    />
+                  </div>
+
+                  {/* Legend beside the heatmap */}
+                  <div className="flex-shrink-0 bg-zinc-50 dark:bg-zinc-900 rounded-md p-3 text-xs space-y-1.5 self-start">
+                    <div className="font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
+                      {heatmapColorMode === 'type' && 'Shot Types'}
+                      {heatmapColorMode === 'rating' && 'Shot Rating'}
+                      {heatmapColorMode === 'outcome' && 'Outcome'}
+                    </div>
+                    {heatmapColorMode === 'type' && (
+                      <>
+                        {Object.entries(SHOT_TYPE_COLORS).map(([type, color]) => (
+                          <div key={type} className="flex items-center gap-2">
+                            <div
+                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: color }}
+                            />
+                            <span className="text-zinc-600 dark:text-zinc-400 capitalize">
+                              {type}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {heatmapColorMode === 'rating' && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400">
+                            Excellent (&gt;10)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400">
+                            Good (7-10)
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400">
+                            Average (4-7)
+                          </span>
+                        </div>
+                      </>
+                    )}
+                    {heatmapColorMode === 'outcome' && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400">Winner</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400">Error</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Video Timeline Scroller */}
+            <VideoTimelineScroller
+              shots={filteredShots}
+              currentTime={currentTime}
+              duration={videoDuration}
+              onSeek={seekVideo}
+              selectedShot={selectedShot}
+            />
+
+            {/* Rally Timeline */}
+            {currentRally && (
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
+                  Current Rally
+                </h3>
+                <RallyTimeline
+                  rally={currentRally}
+                  onShotClick={(index) => {
+                    const shot = shots.find((s) => s.index === index);
+                    if (shot) jumpToShot(shot);
+                  }}
                 />
               </div>
-
-              {/* Winner/Error */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                  Result
-                </label>
-                <select
-                  value={winnerError}
-                  onChange={(e) => setWinnerError(e.target.value)}
-                  className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-600 rounded-md bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm"
-                >
-                  <option value="">All</option>
-                  <option value="winner">Winners</option>
-                  <option value="error">Errors</option>
-                </select>
-              </div>
-
-              <button
-                onClick={() => {
-                  setSelectedShotType('');
-                  setSelectedPlayer('');
-                  setMinRating(0);
-                  setWinnerError('');
-                  setSearchQuery('');
-                }}
-                className="w-full px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-white rounded-md hover:bg-zinc-300 dark:hover:bg-zinc-600 text-sm"
-              >
-                Clear Filters
-              </button>
-            </div>
+            )}
           </div>
 
-          {/* Right: Shot List & Video */}
-          <div className="lg:col-span-2 space-y-4">
-            {/* Video Player */}
-            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
-              <video
-                ref={videoRef}
-                src="/data/original-video.mp4"
-                controls
-                className="w-full"
-              >
-                Your browser does not support the video tag.
-              </video>
-              {selectedShot && (
-                <div className="p-4 bg-zinc-50 dark:bg-zinc-900">
-                  <h3 className="font-semibold text-zinc-900 dark:text-white">
-                    {selectedShot.shot_label} by {selectedShot.player_id}
-                  </h3>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                    Time: {formatTime(selectedShot.timestamp || 0)} | Rating: {selectedShot.shot_rating || 'N/A'}
-                  </p>
-                </div>
-              )}
-            </div>
+          {/* Right Column: Filters + Shot List */}
+          <div className="space-y-4">
+            {/* Enhanced Filters */}
+            <EnhancedFilters
+              filters={filters}
+              onChange={setFilters}
+              availableShotTypes={shotTypes}
+              availablePlayers={players}
+              onClear={clearFilters}
+            />
 
             {/* Shot List */}
             <div className="bg-white dark:bg-zinc-800 rounded-lg shadow">
@@ -263,37 +485,41 @@ export default function Home() {
                   <div
                     key={shot.index}
                     onClick={() => jumpToShot(shot)}
-                    className="p-4 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors"
+                    className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
+                      selectedShot?.index === shot.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                   >
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
                             {shot.shot_label}
                           </span>
-                          <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                          <span className="text-xs text-zinc-600 dark:text-zinc-400">
                             {shot.player_id}
                           </span>
                           {shot.winner_error && (
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              shot.winner_error === 'winner'
-                                ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                                : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                            }`}>
+                            <span
+                              className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                shot.winner_error === 'winner'
+                                  ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                  : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                              }`}
+                            >
                               {shot.winner_error}
                             </span>
                           )}
                         </div>
-                        <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                        <div className="text-xs text-zinc-600 dark:text-zinc-400">
                           {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-medium text-zinc-900 dark:text-white">
+                        <div className="text-xs font-medium text-zinc-900 dark:text-white">
                           {formatTime(shot.timestamp || 0)}
                         </div>
                         {shot.shot_rating > 0 && (
-                          <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                          <div className="text-xs text-amber-600 dark:text-amber-400">
                             ⭐ {shot.shot_rating.toFixed(1)}
                           </div>
                         )}
@@ -306,6 +532,13 @@ export default function Home() {
           </div>
         </div>
       </div>
+
+      {/* Stats Dashboard Modal */}
+      <StatsDashboard
+        shots={filteredShots}
+        isOpen={showStats}
+        onClose={() => setShowStats(false)}
+      />
     </div>
   );
 }
