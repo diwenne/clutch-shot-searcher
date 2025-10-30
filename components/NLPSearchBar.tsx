@@ -1,25 +1,27 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { MagnifyingGlassIcon, MicrophoneIcon } from '@heroicons/react/24/outline';
-import { SparklesIcon } from '@heroicons/react/24/solid';
+import { MagnifyingGlassIcon, MicrophoneIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 import { ShotFilter } from '@/lib/ollama-client';
 
+import { Shot } from '@/types/shot-data';
+
 interface NLPSearchBarProps {
-  onSearch: (query: string, filter: ShotFilter) => void;
+  onSearch: (query: string, filter: ShotFilter, response?: string, analysis?: string) => void;
   loading?: boolean;
+  allShots?: Shot[];
 }
 
 const EXAMPLE_QUERIES = [
   'Show me all winning overhead shots',
   'Find cross-court drives by player 113',
   'High quality shots with rating above 10',
-  'Errors from the bottom player',
-  'Serves landing in zone 4',
-  'Long rallies with more than 10 shots',
+  'How can I improve as player-113?',
+  'Where do I lose the most points?',
+  'What are my weaknesses as player-193?',
 ];
 
-export default function NLPSearchBar({ onSearch, loading }: NLPSearchBarProps) {
+export default function NLPSearchBar({ onSearch, loading, allShots }: NLPSearchBarProps) {
   const [query, setQuery] = useState('');
   const [showExamples, setShowExamples] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -81,27 +83,51 @@ export default function NLPSearchBar({ onSearch, loading }: NLPSearchBarProps) {
     const queryToSearch = searchQuery || query;
     if (!queryToSearch.trim()) return;
 
+    console.log('🔍 Search initiated:', queryToSearch);
     setIsProcessing(true);
+
     try {
       // Call the LLM API to parse the natural language query
+      console.log('📡 Calling API with:', {
+        query: queryToSearch,
+        shotsCount: allShots?.length || 0
+      });
+
       const response = await fetch('/api/llm-search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ query: queryToSearch }),
+        body: JSON.stringify({
+          query: queryToSearch,
+          shots: allShots || []
+        }),
       });
 
+      console.log('📥 API response status:', response.status);
+
       if (!response.ok) {
-        throw new Error('Failed to parse query');
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`Failed to parse query: ${response.status}`);
       }
 
       const data = await response.json();
-      onSearch(queryToSearch, data.filter);
+      console.log('✅ API response data:', data);
+
+      if (data.type === 'analysis') {
+        console.log('Type: Analysis');
+        // Analysis query - show analysis AND apply suggested filter if available
+        onSearch(queryToSearch, data.filter || {}, data.explanation, data.analysis);
+      } else {
+        console.log('Type: Filter');
+        // Filter query - apply filters
+        onSearch(queryToSearch, data.filter || {}, data.explanation);
+      }
     } catch (error) {
-      console.error('Error processing search:', error);
+      console.error('❌ Error processing search:', error);
       // Fall back to basic text search if LLM fails
-      onSearch(queryToSearch, {});
+      onSearch(queryToSearch, {}, 'AI search failed, showing all shots. Try rephrasing your query.');
     } finally {
       setIsProcessing(false);
       setShowExamples(false);
@@ -144,8 +170,8 @@ export default function NLPSearchBar({ onSearch, loading }: NLPSearchBarProps) {
         />
 
         {/* AI Badge */}
-        <div className="absolute right-14 flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-xs font-medium rounded-md">
-          <SparklesIcon className="h-3 w-3" />
+        <div className="absolute right-14 flex items-center gap-1 px-2 py-1 bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 text-xs font-medium rounded border border-zinc-300 dark:border-zinc-600">
+          <CpuChipIcon className="h-3 w-3" />
           <span>AI</span>
         </div>
 
@@ -179,7 +205,7 @@ export default function NLPSearchBar({ onSearch, loading }: NLPSearchBarProps) {
         <div className="absolute top-full mt-2 left-0 right-0 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
           <div className="p-3 border-b border-zinc-200 dark:border-zinc-700">
             <div className="flex items-center gap-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              <SparklesIcon className="h-4 w-4 text-blue-500" />
+              <CpuChipIcon className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
               <span>Example queries</span>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">

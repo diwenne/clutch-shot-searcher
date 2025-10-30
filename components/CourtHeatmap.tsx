@@ -15,7 +15,7 @@ interface CourtHeatmapProps {
   onPathChange?: (path: { x: number; y: number }[]) => void;
 }
 
-// Badminton court dimensions (normalized 0-1, vertical orientation)
+// Padel court dimensions (normalized 0-1, vertical orientation)
 // Court is vertical rectangle: width=100, height=200 (taller than wide)
 const COURT_WIDTH = 100;
 const COURT_HEIGHT = 200;

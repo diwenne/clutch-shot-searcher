@@ -12,7 +12,8 @@ import VideoTimelineScroller from '@/components/VideoTimelineScroller';
 import RallyTimeline from '@/components/RallyTimeline';
 import EnhancedFilters, { FilterState } from '@/components/EnhancedFilters';
 import StatsDashboard from '@/components/StatsDashboard';
-import { ChartBarIcon } from '@heroicons/react/24/outline';
+import ExportDialog from '@/components/ExportDialog';
+import { ChartBarIcon, ArrowDownTrayIcon, XMarkIcon, InformationCircleIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 
 export default function Home() {
   const [shots, setShots] = useState<Shot[]>([]);
@@ -32,6 +33,9 @@ export default function Home() {
   // UI state
   const [showStats, setShowStats] = useState(false);
   const [heatmapColorMode, setHeatmapColorMode] = useState<'type' | 'rating' | 'outcome'>('type');
+  const [showExportDialog, setShowExportDialog] = useState(false);
+  const [searchResponse, setSearchResponse] = useState<string>('');
+  const [analysisResult, setAnalysisResult] = useState<string>('');
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -178,8 +182,8 @@ export default function Home() {
   }, [filteredShots, selectedShot, isPlaying, lockedShot]);
 
   // Handle search
-  const handleSearch = (query: string, filter: ShotFilter) => {
-    // Apply LLM-generated filters
+  const handleSearch = (query: string, filter: ShotFilter, response?: string, analysis?: string) => {
+    // Always apply filters if provided (even for analysis queries)
     const newFilters: FilterState = {
       shotTypes: filter.shotType || [],
       players: filter.player || [],
@@ -192,7 +196,27 @@ export default function Home() {
       rallyLengthMin: filter.rallyLength?.min || 0,
       rallyLengthMax: filter.rallyLength?.max || 100,
     };
-    setFilters(newFilters);
+
+    // Only apply filters if at least one filter is set
+    const hasFilters = Object.values(newFilters).some(val =>
+      (Array.isArray(val) && val.length > 0) ||
+      (typeof val === 'string' && val !== '') ||
+      (typeof val === 'number' && val !== 0 && val !== 13 && val !== 100)
+    );
+
+    if (hasFilters) {
+      setFilters(newFilters);
+    }
+
+    setSearchResponse(response || '');
+
+    if (analysis) {
+      // Analysis query - show analysis
+      setAnalysisResult(analysis);
+    } else {
+      // Filter-only query - clear analysis
+      setAnalysisResult('');
+    }
   };
 
   // Jump to shot in video
@@ -266,6 +290,12 @@ export default function Home() {
       rallyLengthMin: 0,
       rallyLengthMax: 100,
     });
+  };
+
+  // Handle export
+  const handleExport = async (selectedShots: Shot[], mode: 'separate' | 'concatenated') => {
+    setShowExportDialog(false);
+    alert('Export feature coming soon! 🚧');
   };
 
   const formatTime = (seconds: number) => {
@@ -343,7 +373,52 @@ export default function Home() {
           </div>
 
           {/* NLP Search Bar */}
-          <NLPSearchBar onSearch={handleSearch} loading={loading} />
+          <div className="space-y-2">
+            <NLPSearchBar onSearch={handleSearch} loading={loading} allShots={shots} />
+
+            {/* Search Response */}
+            {searchResponse && (
+              <div className="flex items-start gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg">
+                <div className="flex-shrink-0 mt-0.5">
+                  <InformationCircleIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
+                </div>
+                <p className="text-sm text-zinc-900 dark:text-zinc-100 flex-1">
+                  {searchResponse}
+                </p>
+                <button
+                  onClick={() => setSearchResponse('')}
+                  className="flex-shrink-0 text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {/* Analysis Result */}
+            {analysisResult && (
+              <div className="bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <CpuChipIcon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
+                      AI Performance Analysis
+                    </h3>
+                  </div>
+                  <button
+                    onClick={() => setAnalysisResult('')}
+                    className="text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
+                </div>
+                <div className="prose prose-sm dark:prose-invert max-w-none">
+                  <div className="text-sm text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap">
+                    {analysisResult}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -565,10 +640,18 @@ export default function Home() {
 
             {/* Shot List */}
             <div className="bg-white dark:bg-zinc-800 rounded-lg shadow">
-              <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+              <div className="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                 <h2 className="font-semibold text-zinc-900 dark:text-white">
                   Shot List ({filteredShots.length})
                 </h2>
+                <button
+                  onClick={() => setShowExportDialog(true)}
+                  disabled={filteredShots.length === 0}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+                >
+                  <ArrowDownTrayIcon className="h-4 w-4" />
+                  Export
+                </button>
               </div>
               <div className="max-h-[600px] overflow-y-auto">
                 {filteredShots.map((shot) => (
@@ -638,6 +721,17 @@ export default function Home() {
         isOpen={showStats}
         onClose={() => setShowStats(false)}
       />
+
+      {/* Export Dialog */}
+      {showExportDialog && (
+        <ExportDialog
+          shots={filteredShots}
+          videoPath="/data/original-video.mp4"
+          onClose={() => setShowExportDialog(false)}
+          onExport={handleExport}
+        />
+      )}
+
       </section>
     </div>
   );

@@ -1,3 +1,5 @@
+import { Shot } from '@/types/shot-data';
+
 export interface ShotFilter {
   shotType?: string[];
   player?: string[];
@@ -10,92 +12,131 @@ export interface ShotFilter {
   rallyLength?: { min?: number; max?: number };
 }
 
-export interface OllamaResponse {
-  filter: ShotFilter;
+export interface QueryResponse {
+  type: 'filter' | 'analysis';
+  filter?: ShotFilter;
+  analysis?: string;
   explanation?: string;
 }
 
-const SYSTEM_PROMPT = `You are a badminton shot search assistant. Your job is to convert natural language queries into structured filter objects.
+export function calculatePlayerStats(query: string, shots: Shot[]) {
+  // Extract player ID from query if mentioned
+  const playerMatch = query.match(/player[- ]?(\d+)/i);
+  const playerId = playerMatch ? `player-${playerMatch[1]}` : null;
 
-Available shot types: serve, drive, volley, lob, overhead
-Available zones: zone-0, zone-1, zone-2, zone-3, zone-4, zone-5
-Available directions: cross/left, cross/right, straight
-Available players: player-113, player-193, player-367 (and others in the dataset)
-Court sides: top, bot
-Winner/Error: winner (successful shot), error (mistake)
-Shot rating: 0-13 (higher is better quality/difficulty)
+  // Filter shots for the specific player if mentioned
+  const playerShots = playerId
+    ? shots.filter(s => s.player_id === playerId)
+    : shots;
 
-Examples:
-Query: "show me all winning overhead shots"
-Response: {"shotType": ["overhead"], "winnerError": "winner"}
-
-Query: "find cross-court drives by player 113"
-Response: {"shotType": ["drive"], "direction": ["cross/left", "cross/right"], "player": ["player-113"]}
-
-Query: "high quality shots with rating above 10"
-Response: {"minRating": 10}
-
-Query: "errors from the bottom player"
-Response: {"winnerError": "error", "courtSide": "bot"}
-
-Query: "serves landing in zone 4"
-Response: {"shotType": ["serve"], "zone": ["zone-4"]}
-
-Query: "long rallies with more than 10 shots"
-Response: {"rallyLength": {"min": 10}}
-
-Respond ONLY with a valid JSON object representing the filter. Do not include any explanation or additional text.`;
-
-export async function parseNaturalLanguageQuery(
-  query: string
-): Promise<ShotFilter> {
-  try {
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen2.5:7b',
-        prompt: `${SYSTEM_PROMPT}\n\nUser query: "${query}"\n\nJSON response:`,
-        stream: false,
-        options: {
-          temperature: 0.1, // Low temperature for consistent, structured output
-          top_p: 0.9,
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Ollama API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const generatedText = data.response.trim();
-
-    // Try to extract JSON from the response
-    // Sometimes the model might include extra text, so we need to extract the JSON part
-    let jsonMatch = generatedText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      // If no JSON found, try to parse the whole response
-      jsonMatch = [generatedText];
-    }
-
-    const filterObject = JSON.parse(jsonMatch[0]);
-    return filterObject as ShotFilter;
-  } catch (error) {
-    console.error('Error parsing natural language query:', error);
-    // Return an empty filter on error
-    return {};
+  if (playerShots.length === 0) {
+    return null;
   }
+
+  // Calculate statistics
+  const totalShots = playerShots.length;
+  const errors = playerShots.filter(s => s.winner_error === 'error');
+  const winners = playerShots.filter(s => s.winner_error === 'winner');
+  const errorRate = (errors.length / totalShots * 100).toFixed(1);
+  const winnerRate = (winners.length / totalShots * 100).toFixed(1);
+
+  // Shot type breakdown
+  const shotTypeStats: Record<string, { total: number; errors: number }> = {};
+  playerShots.forEach(shot => {
+    if (!shotTypeStats[shot.shot_label]) {
+      shotTypeStats[shot.shot_label] = { total: 0, errors: 0 };
+    }
+    shotTypeStats[shot.shot_label].total++;
+    if (shot.winner_error === 'error') {
+      shotTypeStats[shot.shot_label].errors++;
+    }
+  });
+
+  // Zone analysis (where points are lost)
+  const errorZones: Record<string, number> = {};
+  errors.forEach(shot => {
+    errorZones[shot.zone_shuttle] = (errorZones[shot.zone_shuttle] || 0) + 1;
+  });
+
+  const mostErrorZone = Object.entries(errorZones).sort((a, b) => b[1] - a[1])[0];
+
+  // Direction analysis
+  const directionStats: Record<string, { total: number; errors: number }> = {};
+  playerShots.forEach(shot => {
+    if (!directionStats[shot.shot_direction]) {
+      directionStats[shot.shot_direction] = { total: 0, errors: 0 };
+    }
+    directionStats[shot.shot_direction].total++;
+    if (shot.winner_error === 'error') {
+      directionStats[shot.shot_direction].errors++;
+    }
+  });
+
+  // Average rating
+  const avgRating = (playerShots.reduce((sum, s) => sum + s.shot_rating, 0) / totalShots).toFixed(1);
+
+  return {
+    playerId: playerId || 'All players',
+    totalShots,
+    errorRate,
+    winnerRate,
+    avgRating,
+    shotTypeStats,
+    directionStats,
+    mostErrorZone: mostErrorZone ? `${mostErrorZone[0]} (${mostErrorZone[1]} errors)` : 'N/A'
+  };
 }
 
-export async function testOllamaConnection(): Promise<boolean> {
-  try {
-    const response = await fetch('http://localhost:11434/api/tags');
-    return response.ok;
-  } catch (error) {
-    console.error('Ollama connection test failed:', error);
-    return false;
+export function generateExplanation(query: string, filter: ShotFilter): string {
+  const parts: string[] = [];
+
+  if (filter.shotType && filter.shotType.length > 0) {
+    parts.push(`${filter.shotType.join(', ')} shots`);
   }
+
+  if (filter.player && filter.player.length > 0) {
+    parts.push(`by ${filter.player.join(' or ')}`);
+  }
+
+  if (filter.winnerError) {
+    parts.push(`that were ${filter.winnerError}s`);
+  }
+
+  if (filter.direction && filter.direction.length > 0) {
+    parts.push(`going ${filter.direction.join(' or ')}`);
+  }
+
+  if (filter.zone && filter.zone.length > 0) {
+    parts.push(`landing in ${filter.zone.join(', ')}`);
+  }
+
+  if (filter.courtSide) {
+    parts.push(`from ${filter.courtSide} player`);
+  }
+
+  if (filter.minRating !== undefined || filter.maxRating !== undefined) {
+    if (filter.minRating !== undefined && filter.maxRating !== undefined) {
+      parts.push(`with rating ${filter.minRating}-${filter.maxRating}`);
+    } else if (filter.minRating !== undefined) {
+      parts.push(`with rating above ${filter.minRating}`);
+    } else if (filter.maxRating !== undefined) {
+      parts.push(`with rating below ${filter.maxRating}`);
+    }
+  }
+
+  if (filter.rallyLength) {
+    if (filter.rallyLength.min !== undefined && filter.rallyLength.max !== undefined) {
+      parts.push(`in rallies with ${filter.rallyLength.min}-${filter.rallyLength.max} shots`);
+    } else if (filter.rallyLength.min !== undefined) {
+      parts.push(`in rallies with at least ${filter.rallyLength.min} shots`);
+    } else if (filter.rallyLength.max !== undefined) {
+      parts.push(`in rallies with at most ${filter.rallyLength.max} shots`);
+    }
+  }
+
+  if (parts.length === 0) {
+    return 'Showing all shots. Try adding filters like "winning smashes" or "player-113".';
+  }
+
+  return `Searching for ${parts.join(', ')}.`;
 }
