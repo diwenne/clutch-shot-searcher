@@ -46,6 +46,11 @@ export default function Home() {
     rallyLengthMax: 100,
   });
 
+  // Trajectory matching state
+  const [trajectoryMatchedShots, setTrajectoryMatchedShots] = useState<Shot[]>([]);
+  const [drawMode, setDrawMode] = useState(false);
+  const [drawnPath, setDrawnPath] = useState<{ x: number; y: number }[]>([]);
+
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
   const [players, setPlayers] = useState<string[]>([]);
@@ -78,6 +83,11 @@ export default function Home() {
   // Apply filters
   useEffect(() => {
     let filtered = shots;
+
+    // Trajectory matching (highest priority - if active, start with matched shots)
+    if (trajectoryMatchedShots.length > 0) {
+      filtered = trajectoryMatchedShots;
+    }
 
     // Shot types
     if (filters.shotTypes.length > 0) {
@@ -115,7 +125,7 @@ export default function Home() {
     }
 
     setFilteredShots(filtered);
-  }, [shots, filters]);
+  }, [shots, filters, trajectoryMatchedShots]);
 
   // Video time update
   useEffect(() => {
@@ -192,6 +202,25 @@ export default function Home() {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
     }
+  };
+
+  // Handle trajectory matching
+  const handleTrajectoryMatch = (matchingShots: Shot[]) => {
+    setTrajectoryMatchedShots(matchingShots);
+  };
+
+  const toggleDrawMode = () => {
+    setDrawMode(!drawMode);
+    setDrawnPath([]);
+    if (drawMode) {
+      // Exiting draw mode - clear trajectory filter
+      setTrajectoryMatchedShots([]);
+    }
+  };
+
+  const clearPath = () => {
+    setDrawnPath([]);
+    setTrajectoryMatchedShots([]);
   };
 
   // Handle zone click on heatmap
@@ -385,25 +414,29 @@ export default function Home() {
                       onZoneClick={handleZoneClick}
                       colorMode={heatmapColorMode}
                       selectedZones={filters.zones}
+                      onTrajectoryMatch={handleTrajectoryMatch}
+                      drawMode={drawMode}
+                      drawnPath={drawnPath}
+                      onPathChange={setDrawnPath}
                     />
                   </div>
 
                   {/* Legend beside the heatmap */}
-                  <div className="flex-shrink-0 bg-zinc-50 dark:bg-zinc-900 rounded-md p-3 text-xs space-y-1.5 self-start">
-                    <div className="font-semibold text-zinc-700 dark:text-zinc-300 mb-2">
-                      {heatmapColorMode === 'type' && 'Shot Types'}
-                      {heatmapColorMode === 'rating' && 'Shot Rating'}
-                      {heatmapColorMode === 'outcome' && 'Outcome'}
+                  <div className="flex-shrink-0 bg-zinc-50 dark:bg-zinc-900 rounded-md p-2 text-xs space-y-1 self-start w-24">
+                    <div className="font-semibold text-zinc-700 dark:text-zinc-300 mb-1.5 text-[10px]">
+                      {heatmapColorMode === 'type' && 'Types'}
+                      {heatmapColorMode === 'rating' && 'Rating'}
+                      {heatmapColorMode === 'outcome' && 'Result'}
                     </div>
                     {heatmapColorMode === 'type' && (
                       <>
                         {Object.entries(SHOT_TYPE_COLORS).map(([type, color]) => (
-                          <div key={type} className="flex items-center gap-2">
+                          <div key={type} className="flex items-center gap-1.5">
                             <div
-                              className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                              className="w-2 h-2 rounded-full flex-shrink-0"
                               style={{ backgroundColor: color }}
                             />
-                            <span className="text-zinc-600 dark:text-zinc-400 capitalize">
+                            <span className="text-zinc-600 dark:text-zinc-400 capitalize text-[10px]">
                               {type}
                             </span>
                           </div>
@@ -412,38 +445,63 @@ export default function Home() {
                     )}
                     {heatmapColorMode === 'rating' && (
                       <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
-                          <span className="text-zinc-600 dark:text-zinc-400">
-                            Excellent (&gt;10)
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400 text-[10px]">
+                            &gt;10
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-amber-500 flex-shrink-0" />
-                          <span className="text-zinc-600 dark:text-zinc-400">
-                            Good (7-10)
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-amber-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400 text-[10px]">
+                            7-10
                           </span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
-                          <span className="text-zinc-600 dark:text-zinc-400">
-                            Average (4-7)
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400 text-[10px]">
+                            4-7
                           </span>
                         </div>
                       </>
                     )}
                     {heatmapColorMode === 'outcome' && (
                       <>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" />
-                          <span className="text-zinc-600 dark:text-zinc-400">Winner</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400 text-[10px]">Win</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" />
-                          <span className="text-zinc-600 dark:text-zinc-400">Error</span>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                          <span className="text-zinc-600 dark:text-zinc-400 text-[10px]">Error</span>
                         </div>
                       </>
                     )}
+
+                    {/* Draw Trajectory Buttons */}
+                    <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-1.5">
+                      <button
+                        onClick={toggleDrawMode}
+                        className={`w-full px-1.5 py-1 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
+                          drawMode
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-white text-zinc-700 hover:bg-zinc-100 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 border border-zinc-300 dark:border-zinc-600'
+                        }`}
+                      >
+                        {drawMode ? 'Exit' : 'Draw'}
+                      </button>
+                      <button
+                        onClick={clearPath}
+                        disabled={drawnPath.length === 0}
+                        className={`w-full px-1.5 py-1 rounded text-[10px] font-medium transition-colors whitespace-nowrap ${
+                          drawnPath.length > 0
+                            ? 'bg-red-600 text-white hover:bg-red-700'
+                            : 'bg-zinc-200 text-zinc-400 cursor-not-allowed dark:bg-zinc-800 dark:text-zinc-600'
+                        }`}
+                      >
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

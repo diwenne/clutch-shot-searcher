@@ -1,7 +1,7 @@
 'use client';
 
 import { Shot } from '@/types/shot-data';
-import { useMemo } from 'react';
+import { useMemo, useState, useRef } from 'react';
 
 interface CourtHeatmapProps {
   shots: Shot[];
@@ -9,6 +9,10 @@ interface CourtHeatmapProps {
   onZoneClick?: (zone: string) => void;
   colorMode?: 'type' | 'rating' | 'outcome';
   selectedZones?: string[];
+  onTrajectoryMatch?: (matchingShots: Shot[]) => void;
+  drawMode?: boolean;
+  drawnPath?: { x: number; y: number }[];
+  onPathChange?: (path: { x: number; y: number }[]) => void;
 }
 
 // Badminton court dimensions (normalized 0-1, vertical orientation)
@@ -28,19 +32,19 @@ const ZONES = [
   // Row 1 (top back court): 5, 4, 3
   { id: 'zone-5', key: 'top-zone-5', x: 0, y: 0, width: 33.33, height: 50, label: 'Zone 5' },
   { id: 'zone-4', key: 'top-zone-4', x: 33.33, y: 0, width: 33.34, height: 50, label: 'Zone 4' },
-  { id: 'zone-3', key: 'top-zone-3', x: 66.67, y: 0, width: 33.33, height: 50, label: 'Zone 3' },
+  { id: 'zone-3', key: 'top-zone-3', x: 66.67, y: 0, width: 32.83, height: 50, label: 'Zone 3' },
   // Row 2 (top front court): 2, 1, 0
   { id: 'zone-2', key: 'top-zone-2', x: 0, y: 50, width: 33.33, height: 50, label: 'Zone 2' },
   { id: 'zone-1', key: 'top-zone-1', x: 33.33, y: 50, width: 33.34, height: 50, label: 'Zone 1' },
-  { id: 'zone-0', key: 'top-zone-0', x: 66.67, y: 50, width: 33.33, height: 50, label: 'Zone 0' },
+  { id: 'zone-0', key: 'top-zone-0', x: 66.67, y: 50, width: 32.83, height: 50, label: 'Zone 0' },
   // Row 3 (bottom front court): 0, 1, 2
   { id: 'zone-0', key: 'bot-zone-0', x: 0, y: 100, width: 33.33, height: 50, label: 'Zone 0' },
   { id: 'zone-1', key: 'bot-zone-1', x: 33.33, y: 100, width: 33.34, height: 50, label: 'Zone 1' },
-  { id: 'zone-2', key: 'bot-zone-2', x: 66.67, y: 100, width: 33.33, height: 50, label: 'Zone 2' },
+  { id: 'zone-2', key: 'bot-zone-2', x: 66.67, y: 100, width: 32.83, height: 50, label: 'Zone 2' },
   // Row 4 (bottom back court): 3, 4, 5
   { id: 'zone-3', key: 'bot-zone-3', x: 0, y: 150, width: 33.33, height: 50, label: 'Zone 3' },
   { id: 'zone-4', key: 'bot-zone-4', x: 33.33, y: 150, width: 33.34, height: 50, label: 'Zone 4' },
-  { id: 'zone-5', key: 'bot-zone-5', x: 66.67, y: 150, width: 33.33, height: 50, label: 'Zone 5' },
+  { id: 'zone-5', key: 'bot-zone-5', x: 66.67, y: 150, width: 32.83, height: 50, label: 'Zone 5' },
 ];
 
 const SHOT_TYPE_COLORS: Record<string, string> = {
@@ -51,13 +55,26 @@ const SHOT_TYPE_COLORS: Record<string, string> = {
   overhead: '#ef4444', // red
 };
 
+// Helper to get zone center coordinates
+function getZoneCenter(zoneId: string): [number, number] {
+  const zone = ZONES.find((z) => z.id === zoneId);
+  if (!zone) return [0.5, 0.5];
+  return [(zone.x + zone.width / 2) / 100, (zone.y + zone.height / 2) / 200];
+}
+
 export default function CourtHeatmap({
   shots,
   highlightedShot,
   onZoneClick,
   colorMode = 'type',
   selectedZones = [],
+  onTrajectoryMatch,
+  drawMode = false,
+  drawnPath = [],
+  onPathChange,
 }: CourtHeatmapProps) {
+  const [isDrawing, setIsDrawing] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
   // Calculate zone densities for heatmap
   const zoneDensities = useMemo(() => {
     const densities: Record<string, number> = {};
@@ -111,6 +128,102 @@ export default function CourtHeatmap({
     }
   };
 
+  // Convert screen coordinates to SVG coordinates
+  const screenToSVG = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    if (!svgRef.current) return null;
+    const svg = svgRef.current;
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
+    return { x: svgP.x / 100, y: svgP.y / 200 }; // Normalize to 0-1
+  };
+
+  // Handle drawing events
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    setIsDrawing(true);
+    const point = screenToSVG(e.clientX, e.clientY);
+    if (point) onPathChange?.([point]);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (!drawMode || !isDrawing) return;
+    e.preventDefault();
+    const point = screenToSVG(e.clientX, e.clientY);
+    if (point) {
+      onPathChange?.([...drawnPath, point]);
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (!drawMode || !isDrawing) return;
+    setIsDrawing(false);
+    if (drawnPath.length > 1) {
+      matchTrajectory();
+    }
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!drawMode) return;
+    e.preventDefault();
+    setIsDrawing(true);
+    const touch = e.touches[0];
+    const point = screenToSVG(touch.clientX, touch.clientY);
+    if (point) onPathChange?.([point]);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (!drawMode || !isDrawing) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const point = screenToSVG(touch.clientX, touch.clientY);
+    if (point) {
+      onPathChange?.([...drawnPath, point]);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (!drawMode || !isDrawing) return;
+    setIsDrawing(false);
+    if (drawnPath.length > 1) {
+      matchTrajectory();
+    }
+  };
+
+  // Match shots to drawn trajectory
+  const matchTrajectory = () => {
+    if (drawnPath.length < 2) return;
+
+    const startPoint = drawnPath[0];
+    const endPoint = drawnPath[drawnPath.length - 1];
+
+    // Find shots that match the trajectory
+    const matching = shots.filter((shot) => {
+      // Get approximate start position from zone_player
+      const [startX, startY] = getZoneCenter(shot.zone_player);
+      const [endX, endY] = shot.normalized_coordinates;
+
+      if (!endX || !endY) return false;
+
+      // Calculate distance from drawn trajectory start/end
+      const startDist = Math.sqrt(
+        Math.pow(startX - startPoint.x, 2) + Math.pow(startY - startPoint.y, 2)
+      );
+      const endDist = Math.sqrt(
+        Math.pow(endX - endPoint.x, 2) + Math.pow(endY - endPoint.y, 2)
+      );
+
+      // Threshold for matching (adjust as needed)
+      const threshold = 0.15; // 15% of court size
+      return startDist < threshold && endDist < threshold;
+    });
+
+    console.log(`Found ${matching.length} shots matching trajectory`);
+    onTrajectoryMatch?.(matching);
+  };
+
   return (
     <div className="w-full h-full bg-gradient-to-b from-emerald-50 to-green-100 dark:from-emerald-950 dark:to-green-900 rounded-lg shadow-lg flex flex-col items-center justify-center overflow-hidden py-2 px-2 relative">
       {/* Top player label */}
@@ -121,21 +234,19 @@ export default function CourtHeatmap({
       )}
 
       <svg
+        ref={svgRef}
         viewBox="0 0 100 200"
-        className="max-w-full max-h-full flex-1"
+        className={`max-w-full max-h-full ${drawMode ? 'cursor-crosshair' : ''}`}
         preserveAspectRatio="xMidYMid meet"
+        style={{ border: '1px solid #059669' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
-        {/* Court boundaries (outer rectangle) */}
-        <rect
-          x="0"
-          y="0"
-          width="100"
-          height="200"
-          fill="none"
-          stroke="#059669"
-          strokeWidth="1"
-          className="dark:stroke-emerald-400"
-        />
 
         {/* Net (horizontal line in the middle) */}
         <line
@@ -237,6 +348,40 @@ export default function CourtHeatmap({
             </g>
           );
         })}
+
+        {/* Drawn path */}
+        {drawnPath.length > 1 && (
+          <>
+            <path
+              d={`M ${drawnPath.map((p) => `${p.x * 100},${p.y * 200}`).join(' L ')}`}
+              fill="none"
+              stroke="#3b82f6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.8"
+              className="pointer-events-none"
+            />
+            {/* Start marker */}
+            <circle
+              cx={drawnPath[0].x * 100}
+              cy={drawnPath[0].y * 200}
+              r="3"
+              fill="#10b981"
+              stroke="white"
+              strokeWidth="1"
+            />
+            {/* End marker */}
+            <circle
+              cx={drawnPath[drawnPath.length - 1].x * 100}
+              cy={drawnPath[drawnPath.length - 1].y * 200}
+              r="3"
+              fill="#ef4444"
+              stroke="white"
+              strokeWidth="1"
+            />
+          </>
+        )}
 
         {/* Shot markers */}
         {shots.map((shot, index) => {
