@@ -1,17 +1,29 @@
+FEATURES.md for clutch-shot-searcher
+
 # Shot Searcher - Features
 
 A comprehensive badminton shot analysis tool I built with advanced search, visualization, and analytics capabilities.
 
 ## 🎯 Core Features
 
-### 1. Natural Language Search with Local LLM
+### 1. Minimalist Hero View (Social Media Ready)
+- **Full-Viewport Landing** - Clean, aesthetic stats view that fits perfectly on one screen
+- **Player Comparison Cards** - Side-by-side player stats with winners, errors, and success rates
+- **Visual Progress Bars** - Animated success rate indicators with gradient fills
+- **Overall Match Stats** - Total winners, errors, and W/E ratio in a compact row
+- **Gradient Background** - Beautiful emerald-to-blue gradient with decorative blur elements
+- **Glass-morphism Design** - Frosted glass cards with backdrop blur for modern aesthetic
+- **Animated Scroll Indicator** - Bouncing chevron with "Scroll for detailed analysis" prompt
+- **Share-Worthy Layout** - Designed to look great when screenshotted for social media
+
+### 2. Natural Language Search with Local LLM
 - **Local Ollama Integration** - Runs Qwen 2.5 7B model locally, no API costs
 - **Voice Input** - Built-in Web Speech API for hands-free search
 - **Smart Query Parsing** - Natural language like "show me all winners from zone-4" gets parsed into structured filters
 - **Example Queries** - Pre-built examples to help users get started
 - **Real-time Processing** - Instant filter application after query parsing
 
-### 2. Interactive Court Heatmap
+### 3. Interactive Court Heatmap
 - **Accurate Visual Layout** - Vertical badminton court with horizontal net line
 - **6-Zone Grid System** - Top row (zones 5, 4, 3) and bottom row (zones 0, 1, 2)
 - **Coordinate-Based Zone Calculation** - Automatically calculates visual zones from shot coordinates instead of relying on CSV labels
@@ -28,14 +40,14 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 - **Real-time Video Sync** - Pulsing dot shows current shot position during playback
 - **Responsive Legend** - Color legend positioned beside heatmap for easy reference
 
-### 3. Rally Timeline Viewer
+### 4. Rally Timeline Viewer
 - **Automatic Rally Extraction** - Uses `new_sequence` and `group` fields from CSV
 - **Expandable Rally Cards** - Click to expand and see full shot sequence
 - **Shot Progression Visualization** - Shows player alternation and shot types
 - **Click-to-Jump** - Click any shot in rally to jump to that moment in video
 - **Rally Statistics** - Shows rally length, winner, and duration
 
-### 4. Video Timeline Scroller
+### 5. Video Timeline Scroller
 - **Visual Shot Markers** - Every shot displayed as a vertical line on timeline
 - **Color-Coded by Type** - Markers colored by shot type (serve, drive, volley, etc.)
 - **Height = Rating** - Marker height represents shot rating (taller = higher rated)
@@ -43,7 +55,7 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 - **Playback Position Indicator** - Blue highlight shows current video position
 - **Smooth Scrolling** - Responsive horizontal scroll for long matches
 
-### 5. Enhanced Multi-Dimensional Filters
+### 6. Enhanced Multi-Dimensional Filters
 - **Collapsible Design** - Advanced filters hidden by default to keep UI clean
 - **Filter Categories**:
   - Shot Types (serve, drive, volley, lob, overhead)
@@ -58,7 +70,7 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 - **Clear All Button** - Reset all filters with one click
 - **Filter Persistence** - Filters stay active across different views
 
-### 6. Statistics Dashboard
+### 7. Statistics Dashboard
 - **Comprehensive Analytics** - Modal with charts and metrics
 - **Player Performance Stats**:
   - Total shots per player
@@ -75,7 +87,7 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 - **Overall Match Statistics** - Total shots, avg rating, winner/error counts
 - **Recharts Integration** - Beautiful, responsive charts
 
-### 7. Video Player Integration
+### 8. Video Player Integration
 - **Shot Information Panel** - Shows selected shot details below video
 - **Smart Labels** - "Landing: zone-X" instead of confusing "zone-X → zone-X"
 - **Outcome Badges** - Color-coded winner/error indicators
@@ -94,7 +106,8 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 - **Shadow & Depth** - Subtle shadows for card separation
 
 ### User Experience Optimizations
-- **Default View Simplicity** - Only search bar, video, and heatmap visible initially
+- **Hero Landing View** - Beautiful minimal stats view on first load
+- **Scroll-to-Reveal** - Smooth scroll snap between hero view and detailed analysis
 - **Expandable Controls** - Advanced features hidden until needed
 - **Loading States** - Spinner with descriptive text during data load
 - **Error Handling** - Clear error messages with troubleshooting tips
@@ -151,16 +164,20 @@ A comprehensive badminton shot analysis tool I built with advanced search, visua
 
 ## 🎯 Key Accomplishments
 
-✅ All 5 major features implemented
+✅ Social media-ready hero view with glass-morphism design
+✅ Smooth scroll-snap navigation between views
+✅ All 8 major features implemented
 ✅ Clean, minimalist, aesthetic design
 ✅ Advanced controls are collapsible
 ✅ Mobile responsive
 ✅ Local LLM integration (no backend costs)
 ✅ Real-time video-heatmap synchronization
 ✅ Multi-zone selection with clear visual feedback
-✅ Accurate zone calculation from coordinates
+✅ Accurate 4-row padel court zone layout
 ✅ Comprehensive statistics and analytics
 ✅ Voice input for natural language search
+✅ Player labels on court sides
+✅ Animated scroll indicators
 
 ---
 

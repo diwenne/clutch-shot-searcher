@@ -5,6 +5,7 @@ import { Shot, Rally } from '@/types/shot-data';
 import { parseShotsCSV, getShotTypes, getPlayers } from '@/lib/parse-shots';
 import { ShotFilter } from '@/lib/ollama-client';
 import { extractRallies, findRallyForShot } from '@/lib/rally-analyzer';
+import MinimalStatsView from '@/components/MinimalStatsView';
 import NLPSearchBar from '@/components/NLPSearchBar';
 import CourtHeatmap, { SHOT_TYPE_COLORS } from '@/components/CourtHeatmap';
 import VideoTimelineScroller from '@/components/VideoTimelineScroller';
@@ -258,8 +259,20 @@ export default function Home() {
 
   const currentRally = selectedShot ? findRallyForShot(selectedShot, rallies) : null;
 
+  const scrollToDetailed = () => {
+    const detailedSection = document.getElementById('detailed-view');
+    detailedSection?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900">
+    <div className="h-screen overflow-y-scroll snap-y snap-mandatory">
+      {/* Minimal Stats View - Full Viewport */}
+      <section className="h-screen snap-start snap-always">
+        <MinimalStatsView shots={shots} onExpand={scrollToDetailed} />
+      </section>
+
+      {/* Detailed Analysis View - Full Viewport */}
+      <section id="detailed-view" className="min-h-screen snap-start bg-zinc-50 dark:bg-zinc-900">
       {/* Header */}
       <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-20">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -539,6 +552,7 @@ export default function Home() {
         isOpen={showStats}
         onClose={() => setShowStats(false)}
       />
+      </section>
     </div>
   );
 }
