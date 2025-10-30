@@ -21,6 +21,9 @@ export interface Shot {
   winner_error: string; // 'winner' or 'error' or empty
   shot_rating: number; // Quality rating (higher is better)
   timestamp?: number; // Calculated from frame (assuming 30 fps)
+  startTime?: number; // Start time of shot (halfway from previous shot)
+  endTime?: number; // End time of shot (halfway to next shot)
+  duration?: number; // Duration of shot clip
 }
 
 export interface Rally {

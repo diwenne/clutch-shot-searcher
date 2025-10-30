@@ -23,6 +23,7 @@ export default function Home() {
 
   // Video state
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null);
+  const [lockedShot, setLockedShot] = useState<Shot | null>(null); // Locked shot for isolated playback
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -135,8 +136,14 @@ export default function Home() {
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);
 
-      // Find shot closest to current time (only when playing)
-      if (isPlaying) {
+      // If a shot is locked, check if we've reached the end of its segment
+      if (lockedShot && lockedShot.endTime !== undefined) {
+        if (video.currentTime >= lockedShot.endTime) {
+          // Loop the shot by going back to start
+          video.currentTime = lockedShot.startTime || 0;
+        }
+      } else if (isPlaying) {
+        // Normal playback: Find shot closest to current time
         const closestShot = filteredShots.reduce((closest, shot) => {
           if (!shot.timestamp) return closest;
           const timeDiff = Math.abs(shot.timestamp - video.currentTime);
@@ -168,7 +175,7 @@ export default function Home() {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
     };
-  }, [filteredShots, selectedShot, isPlaying]);
+  }, [filteredShots, selectedShot, isPlaying, lockedShot]);
 
   // Handle search
   const handleSearch = (query: string, filter: ShotFilter) => {
@@ -190,9 +197,21 @@ export default function Home() {
 
   // Jump to shot in video
   const jumpToShot = (shot: Shot) => {
+    // If clicking the same shot that's already locked, unlock it
+    if (lockedShot && lockedShot.index === shot.index) {
+      setLockedShot(null);
+      setSelectedShot(null);
+      if (videoRef.current) {
+        videoRef.current.pause();
+      }
+      return;
+    }
+
+    // Lock the new shot and play only that shot's segment
+    setLockedShot(shot);
     setSelectedShot(shot);
-    if (videoRef.current && shot.timestamp) {
-      videoRef.current.currentTime = shot.timestamp;
+    if (videoRef.current && shot.startTime !== undefined) {
+      videoRef.current.currentTime = shot.startTime;
       videoRef.current.play();
     }
   };
@@ -557,7 +576,11 @@ export default function Home() {
                     key={shot.index}
                     onClick={() => jumpToShot(shot)}
                     className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
-                      selectedShot?.index === shot.index ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      lockedShot?.index === shot.index
+                        ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500'
+                        : selectedShot?.index === shot.index
+                        ? 'bg-blue-50 dark:bg-blue-900/20'
+                        : ''
                     }`}
                   >
                     <div className="flex justify-between items-start">
@@ -569,6 +592,11 @@ export default function Home() {
                           <span className="text-xs text-zinc-600 dark:text-zinc-400">
                             {shot.player_id}
                           </span>
+                          {lockedShot?.index === shot.index && (
+                            <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs font-medium">
+                              🔒 Locked
+                            </span>
+                          )}
                           {shot.winner_error && (
                             <span
                               className={`px-2 py-0.5 rounded text-xs font-medium ${

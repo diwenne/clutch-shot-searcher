@@ -80,6 +80,34 @@ export async function parseShotsCSV(csvPath: string): Promise<Shot[]> {
           };
         });
 
+        // Calculate start/end times for each shot based on consecutive shots
+        for (let i = 0; i < shots.length; i++) {
+          const prevShot = shots[i - 1];
+          const currentShot = shots[i];
+          const nextShot = shots[i + 1];
+
+          if (prevShot && currentShot.timestamp) {
+            // Start time is halfway between previous shot and current shot
+            currentShot.startTime = (prevShot.timestamp! + currentShot.timestamp) / 2;
+          } else if (currentShot.timestamp) {
+            // First shot: start 0.5 seconds before
+            currentShot.startTime = Math.max(0, currentShot.timestamp - 0.5);
+          }
+
+          if (nextShot && currentShot.timestamp) {
+            // End time is halfway between current shot and next shot
+            currentShot.endTime = (currentShot.timestamp + nextShot.timestamp!) / 2;
+          } else if (currentShot.timestamp) {
+            // Last shot: end 0.5 seconds after
+            currentShot.endTime = currentShot.timestamp + 0.5;
+          }
+
+          // Calculate duration
+          if (currentShot.startTime && currentShot.endTime) {
+            currentShot.duration = currentShot.endTime - currentShot.startTime;
+          }
+        }
+
         resolve(shots);
       },
       error: (error) => {
