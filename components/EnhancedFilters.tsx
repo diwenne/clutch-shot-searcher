@@ -117,28 +117,6 @@ export default function EnhancedFilters({
             </div>
           </div>
 
-          {/* Players */}
-          <div>
-            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-              Players
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {availablePlayers.map((player) => (
-                <button
-                  key={player}
-                  onClick={() => toggleArrayFilter('players', player)}
-                  className={`px-3 py-1.5 text-sm rounded-md border transition-colors ${
-                    filters.players.includes(player)
-                      ? 'bg-green-100 dark:bg-green-900 border-green-500 text-green-700 dark:text-green-300'
-                      : 'bg-white dark:bg-zinc-700 border-zinc-300 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 hover:border-green-400'
-                  }`}
-                >
-                  {player}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Zones */}
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">

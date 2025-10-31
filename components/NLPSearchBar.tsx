@@ -10,18 +10,20 @@ interface NLPSearchBarProps {
   onSearch: (query: string, filter: ShotFilter, response?: string, analysis?: string) => void;
   loading?: boolean;
   allShots?: Shot[];
+  selectedPlayer?: string | null;
+  playerDisplayName?: string | null;
 }
 
 const EXAMPLE_QUERIES = [
   'Show me all winning overhead shots',
-  'Find cross-court drives by player 113',
+  'Find cross-court drives',
   'High quality shots with rating above 10',
-  'How can I improve as player-113?',
+  'How can I improve?',
   'Where do I lose the most points?',
-  'What are my weaknesses as player-193?',
+  'What are my weaknesses?',
 ];
 
-export default function NLPSearchBar({ onSearch, loading, allShots }: NLPSearchBarProps) {
+export default function NLPSearchBar({ onSearch, loading, allShots, selectedPlayer, playerDisplayName }: NLPSearchBarProps) {
   const [query, setQuery] = useState('');
   const [showExamples, setShowExamples] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -87,10 +89,16 @@ export default function NLPSearchBar({ onSearch, loading, allShots }: NLPSearchB
     setIsProcessing(true);
 
     try {
-      // Call the LLM API to parse the natural language query
+      // Filter shots to only selected player if one is selected
+      const shotsToAnalyze = selectedPlayer
+        ? (allShots || []).filter(shot => shot.player_id === selectedPlayer)
+        : (allShots || []);
+
       console.log('📡 Calling API with:', {
         query: queryToSearch,
-        shotsCount: allShots?.length || 0
+        shotsCount: shotsToAnalyze.length,
+        selectedPlayer: selectedPlayer || 'everyone',
+        playerDisplayName: playerDisplayName || 'everyone'
       });
 
       const response = await fetch('/api/llm-search', {
@@ -100,7 +108,10 @@ export default function NLPSearchBar({ onSearch, loading, allShots }: NLPSearchB
         },
         body: JSON.stringify({
           query: queryToSearch,
-          shots: allShots || []
+          shots: shotsToAnalyze,
+          allShots: allShots || [], // Send ALL shots for comparison
+          selectedPlayer: selectedPlayer,
+          playerDisplayName: playerDisplayName
         }),
       });
 
@@ -164,7 +175,11 @@ export default function NLPSearchBar({ onSearch, loading, allShots }: NLPSearchB
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setShowExamples(true)}
-          placeholder="Search shots naturally... (e.g., 'show me winning smashes')"
+          placeholder={
+            selectedPlayer && playerDisplayName
+              ? `Ask about ${playerDisplayName}'s performance...`
+              : "Search shots naturally... (e.g., 'show me winning smashes')"
+          }
           className="w-full pl-10 pr-24 py-3 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-zinc-900 dark:text-white placeholder-zinc-500 dark:placeholder-zinc-400"
           disabled={isProcessing || loading}
         />

@@ -7,6 +7,7 @@ import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ShareIcon } from '@
 interface MinimalStatsViewProps {
   shots: Shot[];
   onExpand: () => void;
+  playerNames?: Record<string, string>;
 }
 
 interface PlayerStats {
@@ -18,9 +19,16 @@ interface PlayerStats {
   errorRate: number;
 }
 
-export default function MinimalStatsView({ shots, onExpand }: MinimalStatsViewProps) {
+export default function MinimalStatsView({ shots, onExpand, playerNames: externalPlayerNames }: MinimalStatsViewProps) {
   const [currentScreen, setCurrentScreen] = useState(0); // 0 = match, 1-4 = players
-  const [playerNames, setPlayerNames] = useState<Record<string, string>>({}); // Map of original ID -> custom name
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>(externalPlayerNames || {}); // Map of original ID -> custom name
+
+  // Sync with external player names
+  useEffect(() => {
+    if (externalPlayerNames) {
+      setPlayerNames(externalPlayerNames);
+    }
+  }, [externalPlayerNames]);
   const [editingPlayer, setEditingPlayer] = useState<string | null>(null);
   const [gameDate, setGameDate] = useState<string>(() => {
     const today = new Date();

@@ -13,6 +13,7 @@ import RallyTimeline from '@/components/RallyTimeline';
 import EnhancedFilters, { FilterState } from '@/components/EnhancedFilters';
 import StatsDashboard from '@/components/StatsDashboard';
 import ExportDialog from '@/components/ExportDialog';
+import PlayerSelector from '@/components/PlayerSelector';
 import { ChartBarIcon, ArrowDownTrayIcon, XMarkIcon, InformationCircleIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 
 export default function Home() {
@@ -21,6 +22,10 @@ export default function Home() {
   const [rallies, setRallies] = useState<Rally[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Player selection and renaming
+  const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
+  const [playerNames, setPlayerNames] = useState<Record<string, string>>({});
 
   // Video state
   const [selectedShot, setSelectedShot] = useState<Shot | null>(null);
@@ -60,6 +65,19 @@ export default function Home() {
   const [shotTypes, setShotTypes] = useState<string[]>([]);
   const [players, setPlayers] = useState<string[]>([]);
 
+  // Player rename function
+  const handleRenamePlayer = (playerId: string, newName: string) => {
+    setPlayerNames(prev => ({
+      ...prev,
+      [playerId]: newName
+    }));
+  };
+
+  // Get display name for player
+  const getPlayerDisplayName = (playerId: string) => {
+    return playerNames[playerId] || playerId;
+  };
+
   // Load CSV on mount
   useEffect(() => {
     async function loadShots() {
@@ -89,7 +107,12 @@ export default function Home() {
   useEffect(() => {
     let filtered = shots;
 
-    // Trajectory matching (highest priority - if active, start with matched shots)
+    // Selected player (highest priority)
+    if (selectedPlayer) {
+      filtered = filtered.filter((shot) => shot.player_id === selectedPlayer);
+    }
+
+    // Trajectory matching (second priority - if active, start with matched shots)
     if (trajectoryMatchedShots.length > 0) {
       filtered = trajectoryMatchedShots;
     }
@@ -99,7 +122,7 @@ export default function Home() {
       filtered = filtered.filter((shot) => filters.shotTypes.includes(shot.shot_label));
     }
 
-    // Players
+    // Players (from advanced filters)
     if (filters.players.length > 0) {
       filtered = filtered.filter((shot) => filters.players.includes(shot.player_id));
     }
@@ -130,7 +153,7 @@ export default function Home() {
     }
 
     setFilteredShots(filtered);
-  }, [shots, filters, trajectoryMatchedShots]);
+  }, [shots, filters, trajectoryMatchedShots, selectedPlayer]);
 
   // Video time update
   useEffect(() => {
@@ -346,7 +369,7 @@ export default function Home() {
     <div className="h-screen overflow-y-scroll snap-y snap-mandatory">
       {/* Minimal Stats View - Full Viewport */}
       <section className="h-screen snap-start snap-always">
-        <MinimalStatsView shots={shots} onExpand={scrollToDetailed} />
+        <MinimalStatsView shots={shots} onExpand={scrollToDetailed} playerNames={playerNames} />
       </section>
 
       {/* Detailed Analysis View - Full Viewport */}
@@ -354,7 +377,7 @@ export default function Home() {
       {/* Header */}
       <header className="bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 sticky top-0 z-20">
         <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
             <div>
               <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">
                 Shot Searcher
@@ -363,18 +386,34 @@ export default function Home() {
                 {shots.length} total shots | {filteredShots.length} matching filters
               </p>
             </div>
-            <button
-              onClick={() => setShowStats(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              <ChartBarIcon className="h-5 w-5" />
-              <span className="hidden sm:inline">Statistics</span>
-            </button>
+
+            <div className="flex items-center gap-4">
+              <PlayerSelector
+                players={players}
+                selectedPlayer={selectedPlayer}
+                onSelectPlayer={setSelectedPlayer}
+                playerNames={playerNames}
+                onRenamePlayer={handleRenamePlayer}
+              />
+              <button
+                onClick={() => setShowStats(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <ChartBarIcon className="h-5 w-5" />
+                <span className="hidden sm:inline">Statistics</span>
+              </button>
+            </div>
           </div>
 
           {/* NLP Search Bar */}
           <div className="space-y-2">
-            <NLPSearchBar onSearch={handleSearch} loading={loading} allShots={shots} />
+            <NLPSearchBar
+              onSearch={handleSearch}
+              loading={loading}
+              allShots={shots}
+              selectedPlayer={selectedPlayer}
+              playerDisplayName={selectedPlayer ? getPlayerDisplayName(selectedPlayer) : null}
+            />
 
             {/* Search Response */}
             {searchResponse && (
@@ -639,8 +678,8 @@ export default function Home() {
             />
 
             {/* Shot List */}
-            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow">
-              <div className="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
+              <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between bg-white dark:bg-zinc-800">
                 <h2 className="font-semibold text-zinc-900 dark:text-white">
                   Shot List ({filteredShots.length})
                 </h2>
@@ -653,7 +692,7 @@ export default function Home() {
                   Export
                 </button>
               </div>
-              <div className="max-h-[600px] overflow-y-auto">
+              <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600">
                 {filteredShots.map((shot) => (
                   <div
                     key={shot.index}
@@ -673,7 +712,7 @@ export default function Home() {
                             {shot.shot_label}
                           </span>
                           <span className="text-xs text-zinc-600 dark:text-zinc-400">
-                            {shot.player_id}
+                            {getPlayerDisplayName(shot.player_id)}
                           </span>
                           {lockedShot?.index === shot.index && (
                             <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs font-medium">
