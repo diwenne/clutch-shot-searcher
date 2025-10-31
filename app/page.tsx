@@ -34,6 +34,7 @@ export default function Home() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const shotListRef = useRef<{ [key: number]: HTMLDivElement | null }>({});
 
   // UI state
   const [showStats, setShowStats] = useState(false);
@@ -155,6 +156,16 @@ export default function Home() {
     setFilteredShots(filtered);
   }, [shots, filters, trajectoryMatchedShots, selectedPlayer]);
 
+  // Auto-scroll to selected shot in the list
+  useEffect(() => {
+    if (selectedShot && shotListRef.current[selectedShot.index]) {
+      shotListRef.current[selectedShot.index]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [selectedShot]);
+
   // Video time update
   useEffect(() => {
     const video = videoRef.current;
@@ -169,14 +180,19 @@ export default function Home() {
           // Loop the shot by going back to start
           video.currentTime = lockedShot.startTime || 0;
         }
-      } else if (isPlaying) {
+      } else if (isPlaying && filteredShots.length > 0) {
         // Normal playback: Find shot closest to current time
-        const closestShot = filteredShots.reduce((closest, shot) => {
-          if (!shot.timestamp) return closest;
+        let closestShot: Shot | null = null;
+        let minDiff = Infinity;
+
+        for (const shot of filteredShots) {
+          if (!shot.timestamp) continue;
           const timeDiff = Math.abs(shot.timestamp - video.currentTime);
-          const closestDiff = closest.timestamp ? Math.abs(closest.timestamp - video.currentTime) : Infinity;
-          return timeDiff < closestDiff && timeDiff < 0.5 ? shot : closest;
-        }, filteredShots[0]);
+          if (timeDiff < minDiff) {
+            minDiff = timeDiff;
+            closestShot = shot;
+          }
+        }
 
         if (closestShot && closestShot.index !== selectedShot?.index) {
           setSelectedShot(closestShot);
@@ -696,6 +712,7 @@ export default function Home() {
                 {filteredShots.map((shot) => (
                   <div
                     key={shot.index}
+                    ref={(el) => { shotListRef.current[shot.index] = el; }}
                     onClick={() => jumpToShot(shot)}
                     className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
                       lockedShot?.index === shot.index
