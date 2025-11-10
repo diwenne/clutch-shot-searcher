@@ -324,6 +324,36 @@ export default function Home() {
     }
   };
 
+  // Scroll to active shot in the list
+  const scrollToActiveShot = () => {
+    if (selectedShot && shotListRef.current[selectedShot.index] && shotListContainerRef.current) {
+      const element = shotListRef.current[selectedShot.index];
+      const container = shotListContainerRef.current;
+
+      if (element && container) {
+        // Get the position of the element relative to its parent
+        const elementRect = element.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+
+        // Calculate how far down in the container the element currently is
+        const elementRelativeTop = elementRect.top - containerRect.top;
+
+        // Calculate desired scroll position to center the element
+        const containerHeight = container.clientHeight;
+        const elementHeight = element.offsetHeight;
+        const desiredScrollOffset = (containerHeight / 2) - (elementHeight / 2);
+
+        // Adjust the scroll position
+        const newScrollTop = container.scrollTop + elementRelativeTop - desiredScrollOffset;
+
+        container.scrollTo({
+          top: newScrollTop,
+          behavior: 'smooth',
+        });
+      }
+    }
+  };
+
   // Handle trajectory matching
   const handleTrajectoryMatch = (matchingShots: Shot[]) => {
     setTrajectoryMatchedShots(matchingShots);
@@ -750,15 +780,28 @@ export default function Home() {
                   </button>
                 </div>
                 {filteredShots.length > 0 && (
-                  <button
-                    onClick={playFilteredFromStart}
-                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                    </svg>
-                    Play Filtered Shots
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={playFilteredFromStart}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                      </svg>
+                      Play
+                    </button>
+                    {selectedShot && (
+                      <button
+                        onClick={scrollToActiveShot}
+                        className="flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
+                        </svg>
+                        Go to Active
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <div
