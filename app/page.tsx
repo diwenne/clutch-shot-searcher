@@ -35,6 +35,7 @@ export default function Home() {
   const [isPlaying, setIsPlaying] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const shotListRef = useRef<{ [key: number]: HTMLDivElement | null }>({});
+  const shotListContainerRef = useRef<HTMLDivElement>(null);
 
   // UI state
   const [showStats, setShowStats] = useState(false);
@@ -156,15 +157,7 @@ export default function Home() {
     setFilteredShots(filtered);
   }, [shots, filters, trajectoryMatchedShots, selectedPlayer]);
 
-  // Auto-scroll to selected shot in the list
-  useEffect(() => {
-    if (selectedShot && shotListRef.current[selectedShot.index]) {
-      shotListRef.current[selectedShot.index]?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    }
-  }, [selectedShot]);
+  // No auto-scroll - let user manually scroll the shot list
 
   // Video time update
   useEffect(() => {
@@ -184,18 +177,40 @@ export default function Home() {
         // Normal playback: Find shot closest to current time
         let closestShot: Shot | null = null;
         let minDiff = Infinity;
+        let currentShotIndex = -1;
 
-        for (const shot of filteredShots) {
+        for (let i = 0; i < filteredShots.length; i++) {
+          const shot = filteredShots[i];
           if (!shot.timestamp) continue;
           const timeDiff = Math.abs(shot.timestamp - video.currentTime);
           if (timeDiff < minDiff) {
             minDiff = timeDiff;
             closestShot = shot;
+            currentShotIndex = i;
           }
         }
 
+        // Update selected shot if changed
         if (closestShot && closestShot.index !== selectedShot?.index) {
           setSelectedShot(closestShot);
+        }
+
+        // Auto-skip to next filtered shot when current shot ends
+        if (closestShot && closestShot.endTime !== undefined && currentShotIndex !== -1) {
+          if (video.currentTime >= closestShot.endTime) {
+            // Move to next shot in filtered list
+            const nextShotIndex = currentShotIndex + 1;
+            if (nextShotIndex < filteredShots.length) {
+              const nextShot = filteredShots[nextShotIndex];
+              if (nextShot.startTime !== undefined) {
+                video.currentTime = nextShot.startTime;
+                setSelectedShot(nextShot);
+              }
+            } else {
+              // Reached end of filtered shots - loop back to first or pause
+              video.pause();
+            }
+          }
         }
       }
     };
@@ -204,7 +219,17 @@ export default function Home() {
       setVideoDuration(video.duration);
     };
 
-    const handlePlay = () => setIsPlaying(true);
+    const handlePlay = () => {
+      setIsPlaying(true);
+      // When play starts, if we have filtered shots and we're not already at a shot, jump to first filtered shot
+      if (!lockedShot && filteredShots.length > 0 && video.currentTime < (filteredShots[0].startTime || 0)) {
+        const firstShot = filteredShots[0];
+        if (firstShot.startTime !== undefined) {
+          video.currentTime = firstShot.startTime;
+          setSelectedShot(firstShot);
+        }
+      }
+    };
     const handlePause = () => setIsPlaying(false);
 
     video.addEventListener('timeupdate', handleTimeUpdate);
@@ -283,6 +308,19 @@ export default function Home() {
   const seekVideo = (time: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = time;
+    }
+  };
+
+  // Play filtered shots from the beginning
+  const playFilteredFromStart = () => {
+    if (videoRef.current && filteredShots.length > 0) {
+      const firstShot = filteredShots[0];
+      if (firstShot.startTime !== undefined) {
+        videoRef.current.currentTime = firstShot.startTime;
+        setSelectedShot(firstShot);
+        setLockedShot(null); // Clear any locked shot
+        videoRef.current.play();
+      }
     }
   };
 
@@ -490,7 +528,9 @@ export default function Home() {
                   ref={videoRef}
                   src="/data/original-video.mp4"
                   controls
-                  className="w-full"
+                  preload="metadata"
+                  className="w-full bg-zinc-900"
+                  poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect width='1920' height='1080' fill='%2318181b'/%3E%3Ctext x='50%25' y='50%25' font-family='system-ui' font-size='48' fill='%2371717a' text-anchor='middle' dominant-baseline='middle'%3EClick to load video%3C/text%3E%3C/svg%3E"
                 >
                   Your browser does not support the video tag.
                 </video>
@@ -695,20 +735,36 @@ export default function Home() {
 
             {/* Shot List */}
             <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
-              <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between bg-white dark:bg-zinc-800">
-                <h2 className="font-semibold text-zinc-900 dark:text-white">
-                  Shot List ({filteredShots.length})
-                </h2>
-                <button
-                  onClick={() => setShowExportDialog(true)}
-                  disabled={filteredShots.length === 0}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
-                >
-                  <ArrowDownTrayIcon className="h-4 w-4" />
-                  Export
-                </button>
+              <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
+                <div className="flex items-center justify-between mb-2">
+                  <h2 className="font-semibold text-zinc-900 dark:text-white">
+                    Shot List ({filteredShots.length})
+                  </h2>
+                  <button
+                    onClick={() => setShowExportDialog(true)}
+                    disabled={filteredShots.length === 0}
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+                  >
+                    <ArrowDownTrayIcon className="h-4 w-4" />
+                    Export
+                  </button>
+                </div>
+                {filteredShots.length > 0 && (
+                  <button
+                    onClick={playFilteredFromStart}
+                    className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                    </svg>
+                    Play Filtered Shots
+                  </button>
+                )}
               </div>
-              <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600">
+              <div
+                ref={shotListContainerRef}
+                className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600"
+              >
                 {filteredShots.map((shot) => (
                   <div
                     key={shot.index}
