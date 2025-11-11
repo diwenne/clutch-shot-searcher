@@ -21,6 +21,17 @@ Shot rating: 0-13 (higher is better quality/difficulty)
 
 VIDEO DURATION: ${totalMinutes}:${totalSeconds.toString().padStart(2, '0')} (${videoDurationSeconds} seconds total)
 
+IMPORTANT FILTERING RULES:
+- If the query mentions ONLY shot characteristics (direction, zone, winner/error, rating) WITHOUT a specific shot type, DO NOT include shotType in the response
+- If the query mentions a shot type (serve, drive, volley, lob, overhead), include it in shotType
+- "cross court" or "cross" means direction: ["cross/left", "cross/right"]
+- "straight" means direction: ["straight"]
+- Examples:
+  * "cross court shots" → {"direction": ["cross/left", "cross/right"]} (NO shotType!)
+  * "winning shots" → {"winnerError": "winner"} (NO shotType!)
+  * "cross court drives" → {"shotType": ["drive"], "direction": ["cross/left", "cross/right"]}
+  * "straight smashes" → {"shotType": ["overhead"], "direction": ["straight"]}
+
 TIME-BASED FILTERS:
 - Parse time references like "after 5 minutes", "before 3:30", "in the first 2 minutes"
 - For relative references like "latter half", "second half", "end of game": calculate half of ${videoDurationSeconds} seconds and use that as the timeAfter minutes/seconds
@@ -38,6 +49,11 @@ SEQUENCES:
 Respond ONLY with valid JSON. Examples:
 "show me all winning overhead shots" → {"shotType": ["overhead"], "winnerError": "winner"}
 "high quality shots with rating above 10" → {"minRating": 10}
+"cross court shots" → {"direction": ["cross/left", "cross/right"]}
+"find all cross court shots" → {"direction": ["cross/left", "cross/right"]}
+"straight shots" → {"direction": ["straight"]}
+"winning shots" → {"winnerError": "winner"}
+"cross court drives" → {"shotType": ["drive"], "direction": ["cross/left", "cross/right"]}
 "overhead shots after 5 minutes" → {"shotType": ["overhead"], "timeAfter": {"type": "after", "minutes": 5, "seconds": 0}}
 "serves before 2:30" → {"shotType": ["serve"], "timeBefore": {"type": "before", "minutes": 2, "seconds": 30}}
 "serve followed by overhead" → {"sequence": [{"shotType": ["serve"]}, {"shotType": ["overhead"]}]}

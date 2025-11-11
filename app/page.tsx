@@ -115,53 +115,77 @@ export default function Home() {
 
   // Apply filters
   useEffect(() => {
+    console.log('🔍 FILTER USEEFFECT TRIGGERED');
+    console.log('📊 Current filters:', filters);
+    console.log('📊 Total shots:', shots.length);
+
     let filtered = shots;
+    console.log('Step 0 - Initial:', filtered.length);
 
     // Selected player (highest priority)
     if (selectedPlayer) {
       filtered = filtered.filter((shot) => shot.player_id === selectedPlayer);
+      console.log('Step 1 - After player filter:', filtered.length, 'selectedPlayer:', selectedPlayer);
     }
 
     // Trajectory matching (second priority - if active, start with matched shots)
     if (trajectoryMatchedShots.length > 0) {
       filtered = trajectoryMatchedShots;
+      console.log('Step 2 - After trajectory filter:', filtered.length);
     }
 
     // Shot types
     if (filters.shotTypes.length > 0) {
       filtered = filtered.filter((shot) => filters.shotTypes.includes(shot.shot_label));
+      console.log('Step 3 - After shot type filter:', filtered.length, 'shotTypes:', filters.shotTypes);
     }
 
     // Players (from advanced filters)
     if (filters.players.length > 0) {
       filtered = filtered.filter((shot) => filters.players.includes(shot.player_id));
+      console.log('Step 4 - After players filter:', filtered.length, 'players:', filters.players);
     }
 
     // Zones
     if (filters.zones.length > 0) {
       filtered = filtered.filter((shot) => filters.zones.includes(shot.zone_shuttle));
+      console.log('Step 5 - After zones filter:', filtered.length, 'zones:', filters.zones);
     }
 
     // Directions
     if (filters.directions.length > 0) {
+      console.log('🎯 DIRECTION FILTER ACTIVE');
+      console.log('Filter directions:', filters.directions);
+      console.log('Sample shot directions from data:', shots.slice(0, 10).map(s => s.shot_direction));
+      const beforeDirectionFilter = filtered.length;
       filtered = filtered.filter((shot) => filters.directions.includes(shot.shot_direction));
+      console.log('Step 6 - After direction filter:', filtered.length, 'from', beforeDirectionFilter);
+      if (filtered.length === 0 && beforeDirectionFilter > 0) {
+        console.log('⚠️ WARNING: Direction filter eliminated ALL shots!');
+        console.log('All unique directions in remaining shots:', [...new Set(shots.map(s => s.shot_direction))]);
+      }
     }
 
     // Court side
     if (filters.courtSide) {
       filtered = filtered.filter((shot) => shot.player_court_side === filters.courtSide);
+      console.log('Step 7 - After court side filter:', filtered.length, 'courtSide:', filters.courtSide);
     }
 
     // Rating
+    const beforeRating = filtered.length;
     filtered = filtered.filter(
       (shot) => shot.shot_rating >= filters.minRating && shot.shot_rating <= filters.maxRating
     );
+    console.log('Step 8 - After rating filter:', filtered.length, 'from', beforeRating, `(${filters.minRating}-${filters.maxRating})`);
 
     // Winner/Error
     if (filters.winnerError) {
       filtered = filtered.filter((shot) => shot.winner_error === filters.winnerError);
+      console.log('Step 9 - After winner/error filter:', filtered.length, 'winnerError:', filters.winnerError);
     }
 
+    console.log('✅ FINAL FILTERED SHOTS:', filtered.length);
     setFilteredShots(filtered);
   }, [shots, filters, trajectoryMatchedShots, selectedPlayer]);
 
@@ -374,16 +398,23 @@ export default function Home() {
       rallyLengthMax: filter.rallyLength?.max || 100,
     };
 
-    // Only apply filters if at least one filter is set
-    const hasFilters = Object.values(newFilters).some(val =>
-      (Array.isArray(val) && val.length > 0) ||
-      (typeof val === 'string' && val !== '') ||
-      (typeof val === 'number' && val !== 0 && val !== 13 && val !== 100)
-    );
+    // Check if at least one meaningful filter is set
+    const hasFilters =
+      newFilters.shotTypes.length > 0 ||
+      newFilters.players.length > 0 ||
+      newFilters.zones.length > 0 ||
+      newFilters.directions.length > 0 ||
+      newFilters.courtSide !== '' ||
+      newFilters.winnerError !== '' ||
+      newFilters.minRating > 0 ||
+      newFilters.maxRating < 13 ||
+      newFilters.rallyLengthMin > 0 ||
+      newFilters.rallyLengthMax < 100;
 
-    if (hasFilters) {
-      setFilters(newFilters);
-    }
+    console.log('📊 Filter check:', { hasFilters, newFilters });
+
+    // Always apply filters (even if empty, to reset)
+    setFilters(newFilters);
 
     // Clear sequence when doing regular search
     setNlpSequence([]);
@@ -952,14 +983,34 @@ export default function Home() {
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
                     Shot List ({filteredShots.length})
                   </h2>
-                  <button
-                    onClick={() => setShowExportDialog(true)}
-                    disabled={filteredShots.length === 0}
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
-                  >
-                    <ArrowDownTrayIcon className="h-4 w-4" />
-                    Export
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {filteredShots.length !== shots.length && (
+                      <button
+                        onClick={() => {
+                          clearFilters();
+                          setTrajectoryMatchedShots([]);
+                          setNlpSequence([]);
+                          setSelectedPlayer(null);
+                          setIsSequenceMode(false);
+                          setSequenceLength(0);
+                          setSearchResponse('');
+                          setAnalysisResult('');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg transition-colors"
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                        Reset Filters
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowExportDialog(true)}
+                      disabled={filteredShots.length === 0}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+                    >
+                      <ArrowDownTrayIcon className="h-4 w-4" />
+                      Export
+                    </button>
+                  </div>
                 </div>
                 {filteredShots.length > 0 && (
                   <div className="flex gap-2">
