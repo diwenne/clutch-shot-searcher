@@ -69,6 +69,7 @@ export default function Home() {
   // Sequence state
   const [sequenceLength, setSequenceLength] = useState<number>(0);
   const [isSequenceMode, setIsSequenceMode] = useState(false);
+  const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
 
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
@@ -202,49 +203,57 @@ export default function Home() {
           setShowReplayOverlay(true);
         }
       } else if (isPlaying && filteredShots.length > 0) {
-        // Normal playback: Find shot closest to current time
-        let closestShot: Shot | null = null;
-        let minDiff = Infinity;
-        let currentShotIndex = -1;
+        // Normal playback: Find shot that's currently playing (within its time range)
+        let activeShotIndex = -1;
+        const HIGHLIGHT_GRACE = 1.5; // 1.5 second grace period for highlighting (both before and after)
+        const START_GRACE = 2; // 2 second grace at beginning
 
         for (let i = 0; i < filteredShots.length; i++) {
           const shot = filteredShots[i];
-          if (!shot.timestamp) continue;
-          const timeDiff = Math.abs(shot.timestamp - video.currentTime);
-          if (timeDiff < minDiff) {
-            minDiff = timeDiff;
-            closestShot = shot;
-            currentShotIndex = i;
+          if (!shot.startTime || !shot.endTime) continue;
+
+          // Check if current time is within shot's time range (with grace period before and after)
+          if (video.currentTime >= shot.startTime - START_GRACE &&
+              video.currentTime <= shot.endTime + HIGHLIGHT_GRACE) {
+            activeShotIndex = i;
+            break;
           }
         }
 
-        // Update selected shot if changed
-        if (closestShot) {
+        // Update selected shot only if we're actually within a shot's time range
+        if (activeShotIndex !== -1) {
+          const activeShot = filteredShots[activeShotIndex];
           setSelectedShot(prev => {
             // Only update if actually different to avoid unnecessary re-renders
-            if (prev?.index !== closestShot.index) {
-              return closestShot;
+            if (prev?.index !== activeShot.index) {
+              return activeShot;
             }
             return prev;
           });
-        }
 
-        // Auto-skip to next filtered shot when current shot ends
-        if (closestShot && closestShot.endTime !== undefined && currentShotIndex !== -1) {
-          if (video.currentTime >= closestShot.endTime) {
-            // Move to next shot in filtered list
-            const nextShotIndex = currentShotIndex + 1;
-            if (nextShotIndex < filteredShots.length) {
-              const nextShot = filteredShots[nextShotIndex];
-              if (nextShot.startTime !== undefined) {
-                video.currentTime = nextShot.startTime;
-                setSelectedShot(nextShot);
+          // Auto-skip to next filtered shot when current shot ends (with grace period at end)
+          const SKIP_GRACE = 2; // 2 second grace at end before skipping
+          if (activeShot.endTime !== undefined) {
+            if (video.currentTime >= activeShot.endTime + SKIP_GRACE) {
+              // Move to next shot in filtered list
+              const nextShotIndex = activeShotIndex + 1;
+              if (nextShotIndex < filteredShots.length) {
+                const nextShot = filteredShots[nextShotIndex];
+                if (nextShot.startTime !== undefined) {
+                  // Start a bit before the shot (2 second grace at beginning)
+                  const START_GRACE = 2;
+                  video.currentTime = Math.max(0, nextShot.startTime - START_GRACE);
+                  setSelectedShot(nextShot);
+                }
+              } else {
+                // Reached end of filtered shots - loop back to first or pause
+                video.pause();
               }
-            } else {
-              // Reached end of filtered shots - loop back to first or pause
-              video.pause();
             }
           }
+        } else {
+          // Clear selection if not in any shot's range
+          setSelectedShot(null);
         }
       }
     };
@@ -280,8 +289,78 @@ export default function Home() {
   }, [filteredShots, isPlaying, lockedShot, isSequenceMode]);
 
   // Handle search
+  // Convert ShotFilter to ShotBlock format for SequenceBuilder
+  const convertShotFilterToBlock = (filter: ShotFilter): any => {
+    // Detect video length from last shot
+    const lastShot = shots[shots.length - 1];
+    const videoLength = lastShot?.timestamp ?? 5999;
+    const defaultBeforeMinutes = Math.floor(videoLength / 60);
+    const defaultBeforeSeconds = Math.floor(videoLength % 60);
+
+    // Helper to ensure array format
+    const ensureArray = (value: any): string[] => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      return [value]; // Convert single value to array
+    };
+
+    return {
+      id: Date.now().toString() + Math.random(),
+      shotType: filter.shotType?.[0] || 'any',
+      players: ensureArray(filter.player),
+      zones: ensureArray(filter.zone),
+      directions: ensureArray(filter.direction),
+      courtSide: filter.courtSide || '',
+      minRating: filter.minRating || 0,
+      maxRating: filter.maxRating || 13,
+      winnerError: filter.winnerError || '',
+      // Handle time filters
+      timeBefore: filter.timeBefore || null,
+      timeAfter: filter.timeAfter || null,
+    };
+  };
+
   const handleSearch = (query: string, filter: ShotFilter, response?: string, analysis?: string) => {
-    // Always apply filters if provided (even for analysis queries)
+    console.log('🔍 handleSearch called with filter:', filter);
+
+    // Check if this is a sequence query
+    if (filter.sequence && filter.sequence.length > 0) {
+      console.log('🔗 SEQUENCE QUERY DETECTED - Converting to ShotBlocks');
+
+      // Convert each ShotFilter in the sequence to ShotBlock format
+      const sequenceBlocks = filter.sequence.map((shotFilter, idx) => {
+        console.log(`Converting shot ${idx}:`, shotFilter);
+        const block = convertShotFilterToBlock(shotFilter);
+        console.log(`Converted to block ${idx}:`, block);
+        return block;
+      });
+      console.log('✅ Converted sequence blocks:', sequenceBlocks);
+
+      // Validate blocks before passing
+      const validBlocks = sequenceBlocks.filter(block => {
+        const isValid = block && typeof block === 'object' && typeof block.shotType === 'string';
+        if (!isValid) {
+          console.error('Invalid block detected:', block);
+        }
+        return isValid;
+      });
+
+      if (validBlocks.length !== sequenceBlocks.length) {
+        console.error('Some blocks were invalid and filtered out');
+      }
+
+      // Pass to SequenceBuilder
+      setNlpSequence(validBlocks);
+      setSearchResponse(response || 'Sequence loaded into builder. Click "Find Matching Sequences" to search.');
+
+      // Don't apply regular filters for sequence queries
+      if (analysis) {
+        setAnalysisResult(analysis);
+      }
+      return;
+    }
+
+    // Regular filter query (not a sequence)
     const newFilters: FilterState = {
       shotTypes: filter.shotType || [],
       players: filter.player || [],
@@ -305,6 +384,9 @@ export default function Home() {
     if (hasFilters) {
       setFilters(newFilters);
     }
+
+    // Clear sequence when doing regular search
+    setNlpSequence([]);
 
     setSearchResponse(response || '');
 
@@ -672,7 +754,9 @@ export default function Home() {
                       </div>
                       <div className="text-right">
                         <div className="text-sm font-medium text-zinc-900 dark:text-white">
-                          {formatTime(selectedShot.timestamp || 0)}
+                          {selectedShot.startTime !== undefined && selectedShot.endTime !== undefined
+                            ? `${formatTime(selectedShot.startTime)} - ${formatTime(selectedShot.endTime)}`
+                            : formatTime(selectedShot.timestamp || 0)}
                         </div>
                         {selectedShot.shot_rating > 0 && (
                           <div className="text-xs text-amber-600 dark:text-amber-400 mt-1">
@@ -858,6 +942,7 @@ export default function Home() {
               availablePlayers={players}
               playerNames={playerNames}
               availableShotTypes={shotTypes}
+              nlpSequence={nlpSequence}
             />
 
             {/* Shot List */}

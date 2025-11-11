@@ -6,7 +6,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const FILTER_SYSTEM_PROMPT = `You are a padel shot search assistant. Convert natural language queries into structured filter objects.
+const buildFilterSystemPrompt = (videoDurationSeconds: number) => {
+  const totalMinutes = Math.floor(videoDurationSeconds / 60);
+  const totalSeconds = Math.floor(videoDurationSeconds % 60);
+
+  return `You are a padel shot search assistant. Convert natural language queries into structured filter objects.
 
 Available shot types: serve, drive, volley, lob, overhead
 Available zones: zone-0, zone-1, zone-2, zone-3, zone-4, zone-5
@@ -15,9 +19,31 @@ Court sides: top, bot
 Winner/Error: winner (successful shot), error (mistake)
 Shot rating: 0-13 (higher is better quality/difficulty)
 
+VIDEO DURATION: ${totalMinutes}:${totalSeconds.toString().padStart(2, '0')} (${videoDurationSeconds} seconds total)
+
+TIME-BASED FILTERS:
+- Parse time references like "after 5 minutes", "before 3:30", "in the first 2 minutes"
+- For relative references like "latter half", "second half", "end of game": calculate half of ${videoDurationSeconds} seconds and use that as the timeAfter minutes/seconds
+- For "first half", "early game", "beginning": calculate half of ${videoDurationSeconds} seconds and use that as the timeBefore minutes/seconds
+- Format: {"timeAfter": {"type": "after", "minutes": X, "seconds": Y}} or {"timeBefore": {"type": "before", "minutes": X, "seconds": Y}}
+- IMPORTANT: You MUST calculate the actual time values based on the video duration provided above. Do the math!
+
+SEQUENCES:
+- For consecutive shot patterns like "serve followed by smash" or "drive then volley"
+- Format: {"sequence": [{"shotType": ["serve"]}, {"shotType": ["overhead"]}]}
+- Each element in the sequence array is a separate shot filter
+- You can add other filters to each shot in the sequence (player, zone, etc.)
+- IMPORTANT: Time filters in sequences apply to ALL shots in the sequence (add to FIRST shot only)
+
 Respond ONLY with valid JSON. Examples:
 "show me all winning overhead shots" → {"shotType": ["overhead"], "winnerError": "winner"}
-"high quality shots with rating above 10" → {"minRating": 10}`;
+"high quality shots with rating above 10" → {"minRating": 10}
+"overhead shots after 5 minutes" → {"shotType": ["overhead"], "timeAfter": {"type": "after", "minutes": 5, "seconds": 0}}
+"serves before 2:30" → {"shotType": ["serve"], "timeBefore": {"type": "before", "minutes": 2, "seconds": 30}}
+"serve followed by overhead" → {"sequence": [{"shotType": ["serve"]}, {"shotType": ["overhead"]}]}
+"winning drive then error volley" → {"sequence": [{"shotType": ["drive"], "winnerError": "winner"}, {"shotType": ["volley"], "winnerError": "error"}]}
+"drives in the first 2 minutes then overhead" → {"sequence": [{"shotType": ["drive"], "timeBefore": {"type": "before", "minutes": 2, "seconds": 0}}, {"shotType": ["overhead"]}]}`;
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,13 +60,14 @@ export async function POST(request: NextRequest) {
     console.log('✓ OpenAI API key found:', process.env.OPENAI_API_KEY.slice(0, 10) + '...');
 
     const body = await request.json();
-    const { query, shots, selectedPlayer, playerDisplayName, allShots } = body;
+    const { query, shots, selectedPlayer, playerDisplayName, allShots, videoDuration } = body;
 
     console.log('Query:', query);
     console.log('Shots count (player):', shots?.length || 0);
     console.log('Shots count (all):', allShots?.length || 0);
     console.log('Selected player:', selectedPlayer || 'everyone');
     console.log('Player display name:', playerDisplayName || 'N/A');
+    console.log('Video duration (seconds):', videoDuration || 'N/A');
 
     if (!query || typeof query !== 'string') {
       return NextResponse.json(
@@ -222,6 +249,11 @@ Make it feel like a real coach talking, not a data report.`
       });
     } else {
       console.log('Processing as FILTER query...');
+
+      // Build dynamic prompt with actual video duration
+      const duration = videoDuration || 5999;
+      const FILTER_SYSTEM_PROMPT = buildFilterSystemPrompt(duration);
+
       // Filter query
       const filterResponse = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
@@ -240,6 +272,18 @@ Make it feel like a real coach talking, not a data report.`
       console.log('Filter JSON:', filterText);
 
       const filterObject = JSON.parse(filterText) as ShotFilter;
+
+      // Log advanced filters
+      if (filterObject.sequence) {
+        console.log('🔗 SEQUENCE DETECTED:', filterObject.sequence);
+      }
+      if (filterObject.timeAfter) {
+        console.log('⏱️ TIME AFTER FILTER:', filterObject.timeAfter);
+      }
+      if (filterObject.timeBefore) {
+        console.log('⏱️ TIME BEFORE FILTER:', filterObject.timeBefore);
+      }
+
       const explanation = generateExplanation(query, filterObject);
 
       console.log('Generated explanation:', explanation);

@@ -94,11 +94,17 @@ export default function NLPSearchBar({ onSearch, loading, allShots, selectedPlay
         ? (allShots || []).filter(shot => shot.player_id === selectedPlayer)
         : (allShots || []);
 
+      // Detect video duration from last shot
+      const videoLength = allShots && allShots.length > 0
+        ? allShots[allShots.length - 1].timestamp || 5999
+        : 5999;
+
       console.log('📡 Calling API with:', {
         query: queryToSearch,
         shotsCount: shotsToAnalyze.length,
         selectedPlayer: selectedPlayer || 'everyone',
-        playerDisplayName: playerDisplayName || 'everyone'
+        playerDisplayName: playerDisplayName || 'everyone',
+        videoDuration: videoLength
       });
 
       const response = await fetch('/api/llm-search', {
@@ -111,7 +117,8 @@ export default function NLPSearchBar({ onSearch, loading, allShots, selectedPlay
           shots: shotsToAnalyze,
           allShots: allShots || [], // Send ALL shots for comparison
           selectedPlayer: selectedPlayer,
-          playerDisplayName: playerDisplayName
+          playerDisplayName: playerDisplayName,
+          videoDuration: videoLength
         }),
       });
 

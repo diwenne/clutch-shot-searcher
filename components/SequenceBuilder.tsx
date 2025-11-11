@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { PlusIcon, XMarkIcon, ArrowRightIcon, PlayIcon, ChevronDownIcon, ChevronUpIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { Shot } from '@/types/shot-data';
 
@@ -32,6 +32,7 @@ interface SequenceBuilderProps {
   availablePlayers: string[];
   playerNames: Record<string, string>;
   availableShotTypes: string[];
+  nlpSequence?: ShotBlock[]; // Sequence from NLP query
 }
 
 const ZONES = ['zone-0', 'zone-1', 'zone-2', 'zone-3', 'zone-4', 'zone-5'];
@@ -51,7 +52,8 @@ export default function SequenceBuilder({
   onSequenceMatch,
   availablePlayers,
   playerNames,
-  availableShotTypes
+  availableShotTypes,
+  nlpSequence
 }: SequenceBuilderProps) {
   const [sequence, setSequence] = useState<ShotBlock[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -59,6 +61,15 @@ export default function SequenceBuilder({
   const [draggedType, setDraggedType] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [draggedTimeType, setDraggedTimeType] = useState<'before' | 'after' | null>(null);
+
+  // Populate sequence from NLP query
+  useEffect(() => {
+    if (nlpSequence && nlpSequence.length > 0) {
+      console.log('📥 NLP Sequence received:', nlpSequence);
+      setSequence(nlpSequence);
+      setIsExpanded(true); // Auto-expand when NLP populates
+    }
+  }, [nlpSequence]);
 
   const createBlock = (shotType: string): ShotBlock => ({
     id: Date.now().toString() + Math.random(),

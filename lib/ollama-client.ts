@@ -1,5 +1,11 @@
 import { Shot } from '@/types/shot-data';
 
+export interface TimeFilter {
+  type: 'before' | 'after';
+  minutes: number;
+  seconds: number;
+}
+
 export interface ShotFilter {
   shotType?: string[];
   player?: string[];
@@ -10,6 +16,11 @@ export interface ShotFilter {
   maxRating?: number;
   winnerError?: 'winner' | 'error';
   rallyLength?: { min?: number; max?: number };
+  // Time-based filters
+  timeBefore?: TimeFilter;
+  timeAfter?: TimeFilter;
+  // Sequence support (array of filters for consecutive shots)
+  sequence?: ShotFilter[];
 }
 
 export interface QueryResponse {
@@ -90,11 +101,11 @@ export function calculatePlayerStats(query: string, shots: Shot[]) {
 export function generateExplanation(query: string, filter: ShotFilter): string {
   const parts: string[] = [];
 
-  if (filter.shotType && filter.shotType.length > 0) {
+  if (filter.shotType && Array.isArray(filter.shotType) && filter.shotType.length > 0) {
     parts.push(`${filter.shotType.join(', ')} shots`);
   }
 
-  if (filter.player && filter.player.length > 0) {
+  if (filter.player && Array.isArray(filter.player) && filter.player.length > 0) {
     parts.push(`by ${filter.player.join(' or ')}`);
   }
 
@@ -102,11 +113,11 @@ export function generateExplanation(query: string, filter: ShotFilter): string {
     parts.push(`that were ${filter.winnerError}s`);
   }
 
-  if (filter.direction && filter.direction.length > 0) {
+  if (filter.direction && Array.isArray(filter.direction) && filter.direction.length > 0) {
     parts.push(`going ${filter.direction.join(' or ')}`);
   }
 
-  if (filter.zone && filter.zone.length > 0) {
+  if (filter.zone && Array.isArray(filter.zone) && filter.zone.length > 0) {
     parts.push(`landing in ${filter.zone.join(', ')}`);
   }
 
@@ -132,6 +143,24 @@ export function generateExplanation(query: string, filter: ShotFilter): string {
     } else if (filter.rallyLength.max !== undefined) {
       parts.push(`in rallies with at most ${filter.rallyLength.max} shots`);
     }
+  }
+
+  if (filter.timeAfter) {
+    const time = `${filter.timeAfter.minutes}:${filter.timeAfter.seconds.toString().padStart(2, '0')}`;
+    parts.push(`occurring after ${time} in the video`);
+  }
+
+  if (filter.timeBefore) {
+    const time = `${filter.timeBefore.minutes}:${filter.timeBefore.seconds.toString().padStart(2, '0')}`;
+    parts.push(`occurring before ${time} in the video`);
+  }
+
+  if (filter.sequence && filter.sequence.length > 0) {
+    const sequenceDesc = filter.sequence.map((s, i) => {
+      const shotType = s.shotType?.[0] || 'any shot';
+      return `${i + 1}. ${shotType}`;
+    }).join(' → ');
+    return `Finding sequence: ${sequenceDesc}`;
   }
 
   if (parts.length === 0) {
