@@ -564,6 +564,7 @@ export default function Home() {
                 >
                   Your browser does not support the video tag.
                 </video>
+
                 {selectedShot && (
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700">
                     <div className="flex items-start justify-between">
@@ -729,10 +730,12 @@ export default function Home() {
             {/* Video Timeline Scroller */}
             <VideoTimelineScroller
               shots={filteredShots}
+              allShots={shots}
               currentTime={currentTime}
               duration={videoDuration}
               onSeek={seekVideo}
               selectedShot={selectedShot}
+              lockedShot={lockedShot}
             />
 
             {/* Rally Timeline */}
