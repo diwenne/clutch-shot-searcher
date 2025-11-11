@@ -631,7 +631,7 @@ export default function Home() {
                           <div className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
                             Replay
                           </div>
-                          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                          <div className="text-sm text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">
                             {replayLabel}
                           </div>
                         </div>
@@ -954,42 +954,6 @@ export default function Home() {
                                 </svg>
                                 Sequence
                               </button>
-                              <button
-                                onClick={() => {
-                                  if (videoRef.current && sequence[0]) {
-                                    const rallyNumber = sequence[0].group;
-                                    const rallyShotsInOrder = shots.filter(s => s.group === rallyNumber).sort((a, b) => a.index - b.index);
-                                    if (rallyShotsInOrder.length > 0) {
-                                      const rallyStart = rallyShotsInOrder[0];
-                                      const rallyEnd = rallyShotsInOrder[rallyShotsInOrder.length - 1];
-                                      if (rallyStart.startTime !== undefined && rallyEnd.endTime !== undefined) {
-                                        const rallyLock: Shot = {
-                                          ...sequence[0],
-                                          index: -2,
-                                          startTime: rallyStart.startTime,
-                                          endTime: rallyEnd.endTime,
-                                        };
-                                        // Build rally description with first/last shots
-                                        const rallyDescription = `${rallyShotsInOrder[0].shot_label} → ... → ${rallyShotsInOrder[rallyShotsInOrder.length - 1].shot_label}`;
-                                        const timeRange = `${formatTime(rallyStart.timestamp || 0)} - ${formatTime(rallyEnd.timestamp || 0)}`;
-                                        videoRef.current.currentTime = rallyStart.startTime;
-                                        setSelectedShot(sequence[0]);
-                                        setLockedShot(rallyLock);
-                                        setShowReplayOverlay(false);
-                                        setReplayLabel(`Rally #${rallyNumber} (${rallyShotsInOrder.length} shots)\n${rallyDescription}\n${timeRange}`);
-                                        videoRef.current.play();
-                                      }
-                                    }
-                                  }
-                                }}
-                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                                title="Play the full rally"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                                </svg>
-                                Rally
-                              </button>
                             </div>
                           </div>
                         </div>
@@ -1005,8 +969,6 @@ export default function Home() {
                                 ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500'
                                 : selectedShot?.index === shot.index
                                 ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500'
-                                : idx === 0
-                                ? 'border-l-4 border-l-purple-500'
                                 : ''
                             }`}
                           >
