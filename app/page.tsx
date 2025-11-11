@@ -1087,7 +1087,9 @@ export default function Home() {
                               </div>
                               <div className="text-right">
                                 <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                                  {formatTime(shot.timestamp || 0)}
+                                  {shot.startTime !== undefined && shot.endTime !== undefined
+                                    ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
+                                    : formatTime(shot.timestamp || 0)}
                                 </div>
                                 {shot.shot_rating > 0 && (
                                   <div className="text-xs text-amber-600 dark:text-amber-400">
@@ -1148,7 +1150,9 @@ export default function Home() {
                         </div>
                         <div className="text-right">
                           <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                            {formatTime(shot.timestamp || 0)}
+                            {shot.startTime !== undefined && shot.endTime !== undefined
+                              ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
+                              : formatTime(shot.timestamp || 0)}
                           </div>
                           {shot.shot_rating > 0 && (
                             <div className="text-xs text-amber-600 dark:text-amber-400">
