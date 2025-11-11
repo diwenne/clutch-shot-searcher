@@ -172,6 +172,26 @@ export default function Home() {
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime);
 
+      // Update selected shot based on current time (for sequence playback)
+      if (isSequenceMode && filteredShots.length > 0) {
+        const currentShot = filteredShots.find(
+          shot =>
+            shot.startTime !== undefined &&
+            shot.endTime !== undefined &&
+            video.currentTime >= shot.startTime &&
+            video.currentTime <= shot.endTime
+        );
+        if (currentShot) {
+          setSelectedShot(prev => {
+            // Only update if actually different to avoid unnecessary re-renders
+            if (prev?.index !== currentShot.index) {
+              return currentShot;
+            }
+            return prev;
+          });
+        }
+      }
+
       // If a shot is locked, check if we've reached the end of its segment
       if (lockedShot && lockedShot.endTime !== undefined) {
         if (video.currentTime >= lockedShot.endTime) {
@@ -196,8 +216,14 @@ export default function Home() {
         }
 
         // Update selected shot if changed
-        if (closestShot && closestShot.index !== selectedShot?.index) {
-          setSelectedShot(closestShot);
+        if (closestShot) {
+          setSelectedShot(prev => {
+            // Only update if actually different to avoid unnecessary re-renders
+            if (prev?.index !== closestShot.index) {
+              return closestShot;
+            }
+            return prev;
+          });
         }
 
         // Auto-skip to next filtered shot when current shot ends
@@ -248,7 +274,7 @@ export default function Home() {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
     };
-  }, [filteredShots, selectedShot, isPlaying, lockedShot]);
+  }, [filteredShots, isPlaying, lockedShot, isSequenceMode]);
 
   // Handle search
   const handleSearch = (query: string, filter: ShotFilter, response?: string, analysis?: string) => {
