@@ -4,6 +4,12 @@ import { useState } from 'react';
 import { PlusIcon, XMarkIcon, ArrowRightIcon, PlayIcon, ChevronDownIcon, ChevronUpIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { Shot } from '@/types/shot-data';
 
+interface TimeFilter {
+  type: 'before' | 'after';
+  minutes: number;
+  seconds: number;
+}
+
 interface ShotBlock {
   id: string;
   shotType: string; // 'serve', 'drive', 'volley', 'lob', 'overhead', 'any'
@@ -15,6 +21,9 @@ interface ShotBlock {
   minRating: number;
   maxRating: number;
   winnerError: string;
+  // Time filters (can have both before and after)
+  timeBefore: TimeFilter | null;
+  timeAfter: TimeFilter | null;
 }
 
 interface SequenceBuilderProps {
@@ -49,6 +58,7 @@ export default function SequenceBuilder({
   const [expandedFilters, setExpandedFilters] = useState<Set<string>>(new Set());
   const [draggedType, setDraggedType] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [draggedTimeType, setDraggedTimeType] = useState<'before' | 'after' | null>(null);
 
   const createBlock = (shotType: string): ShotBlock => ({
     id: Date.now().toString() + Math.random(),
@@ -59,11 +69,17 @@ export default function SequenceBuilder({
     courtSide: '',
     minRating: 0,
     maxRating: 13,
-    winnerError: ''
+    winnerError: '',
+    timeBefore: null,
+    timeAfter: null
   });
 
   const handleDragStartFromPalette = (shotType: string) => {
     setDraggedType(shotType);
+  };
+
+  const handleDragStartTimeFilter = (type: 'before' | 'after') => {
+    setDraggedTimeType(type);
   };
 
   const handleDragStartFromSequence = (index: number) => {
@@ -110,6 +126,44 @@ export default function SequenceBuilder({
 
   const updateShot = (id: string, updates: Partial<ShotBlock>) => {
     setSequence(sequence.map(s => (s.id === id ? { ...s, ...updates } : s)));
+  };
+
+  const handleDropTimeOnShot = (e: React.DragEvent, shotId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (draggedTimeType) {
+      const shot = sequence.find(s => s.id === shotId);
+      if (!shot) return;
+
+      if (draggedTimeType === 'before') {
+        // Default to end of video (last shot's timestamp)
+        const lastShot = shots[shots.length - 1];
+        const videoLength = lastShot?.timestamp ?? 5999; // fallback to 99:59
+        const minutes = Math.floor(videoLength / 60);
+        const seconds = Math.floor(videoLength % 60);
+        updateShot(shotId, { timeBefore: { type: 'before', minutes, seconds } });
+      } else {
+        updateShot(shotId, { timeAfter: { type: 'after', minutes: 0, seconds: 0 } });
+      }
+      setDraggedTimeType(null);
+    }
+  };
+
+  const removeTimeFilter = (shotId: string, type: 'before' | 'after') => {
+    if (type === 'before') {
+      updateShot(shotId, { timeBefore: null });
+    } else {
+      updateShot(shotId, { timeAfter: null });
+    }
+  };
+
+  const updateTimeFilter = (shotId: string, type: 'before' | 'after', minutes: number, seconds: number) => {
+    if (type === 'before') {
+      updateShot(shotId, { timeBefore: { type: 'before', minutes, seconds } });
+    } else {
+      updateShot(shotId, { timeAfter: { type: 'after', minutes, seconds } });
+    }
   };
 
   const toggleArrayFilter = (shotId: string, key: keyof Pick<ShotBlock, 'players' | 'zones' | 'directions'>, value: string) => {
@@ -199,6 +253,20 @@ export default function SequenceBuilder({
           return false;
         }
 
+        // Check time filters
+        if (block.timeBefore && shot.timestamp !== undefined) {
+          const filterTime = block.timeBefore.minutes * 60 + block.timeBefore.seconds;
+          if (shot.timestamp >= filterTime) {
+            return false;
+          }
+        }
+        if (block.timeAfter && shot.timestamp !== undefined) {
+          const filterTime = block.timeAfter.minutes * 60 + block.timeAfter.seconds;
+          if (shot.timestamp <= filterTime) {
+            return false;
+          }
+        }
+
         // Check if consecutive (indices differ by 1)
         if (idx > 0 && shot.index !== potentialMatch[idx - 1].index + 1) {
           return false;
@@ -268,62 +336,162 @@ export default function SequenceBuilder({
                   Drag shot types here to build a sequence
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-1">
                   {sequence.map((block, idx) => (
-                    <div key={block.id} className="flex items-center gap-1">
-                      {/* Shot Block */}
-                      <div
-                        draggable
-                        onDragStart={() => handleDragStartFromSequence(idx)}
-                        onDragOver={handleDragOver}
-                        onDrop={(e) => handleDropInSequence(e, idx)}
-                        className={`relative group cursor-move`}
-                      >
+                    <div key={block.id} className="flex flex-col gap-2 w-full">
+                      <div className="flex items-center gap-1">
+                        {/* Shot Block with Time Filters */}
                         <div
-                          className={`${SHOT_TYPE_COLORS[block.shotType]} text-white px-4 py-2 rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all ${
-                            hasAdvancedFilters(block) ? 'ring-2 ring-yellow-400 dark:ring-yellow-500' : ''
-                          }`}
+                          draggable
+                          onDragStart={() => handleDragStartFromSequence(idx)}
+                          onDragOver={handleDragOver}
+                          onDrop={(e) => {
+                            if (draggedTimeType) {
+                              handleDropTimeOnShot(e, block.id);
+                            } else {
+                              handleDropInSequence(e, idx);
+                            }
+                          }}
+                          onClick={() => toggleFilters(block.id)}
+                          className="relative cursor-pointer flex-1"
                         >
-                          <div className="flex items-center gap-2">
-                            <span>{block.shotType}</span>
-                            {hasAdvancedFilters(block) && (
-                              <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">filtered</span>
-                            )}
+                          {/* Time After Badge */}
+                          {block.timeAfter && (
+                            <div className="absolute -top-2 left-2 bg-teal-500 text-white text-xs px-2 py-0.5 rounded-full shadow-md flex items-center gap-1 z-10">
+                              <span>After {block.timeAfter.minutes}:{block.timeAfter.seconds.toString().padStart(2, '0')}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTimeFilter(block.id, 'after');
+                                }}
+                                className="hover:text-teal-200"
+                              >
+                                <XMarkIcon className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Time Before Badge */}
+                          {block.timeBefore && (
+                            <div className="absolute -bottom-2 left-2 bg-orange-500 text-white text-xs px-2 py-0.5 rounded-full shadow-md flex items-center gap-1 z-10">
+                              <span>Before {block.timeBefore.minutes}:{block.timeBefore.seconds.toString().padStart(2, '0')}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removeTimeFilter(block.id, 'before');
+                                }}
+                                className="hover:text-orange-200"
+                              >
+                                <XMarkIcon className="h-3 w-3" />
+                              </button>
+                            </div>
+                          )}
+
+                          <div
+                            className={`${SHOT_TYPE_COLORS[block.shotType]} text-white px-4 py-2 rounded-lg font-medium text-sm shadow-sm hover:shadow-md transition-all ${
+                              hasAdvancedFilters(block) || block.timeBefore || block.timeAfter ? 'ring-2 ring-yellow-400 dark:ring-yellow-500' : ''
+                            } ${expandedFilters.has(block.id) ? 'rounded-b-none' : ''}`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span>#{idx + 1} {block.shotType}</span>
+                                {(hasAdvancedFilters(block) || block.timeBefore || block.timeAfter) && (
+                                  <span className="text-xs bg-white/20 px-1.5 py-0.5 rounded">filtered</span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {expandedFilters.has(block.id) ? (
+                                  <ChevronUpIcon className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDownIcon className="h-4 w-4" />
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Hover controls */}
-                        <div className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                          <button
-                            onClick={() => toggleFilters(block.id)}
-                            className="p-1 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700"
-                            title="Advanced filters"
-                          >
-                            <AdjustmentsHorizontalIcon className="h-3 w-3" />
-                          </button>
-                          <button
-                            onClick={() => removeShot(block.id)}
-                            className="p-1 bg-red-600 text-white rounded-full shadow-lg hover:bg-red-700"
-                            title="Remove"
-                          >
-                            <XMarkIcon className="h-3 w-3" />
-                          </button>
-                        </div>
+                        {/* Remove button */}
+                        <button
+                          onClick={() => removeShot(block.id)}
+                          className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                          title="Remove"
+                        >
+                          <XMarkIcon className="h-4 w-4" />
+                        </button>
+                      </div>
 
-                        {/* Advanced Filters Panel */}
-                        {expandedFilters.has(block.id) && (
-                          <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 p-4 space-y-3">
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="text-sm font-semibold text-zinc-900 dark:text-white">
-                                Advanced Filters: {block.shotType}
-                              </h4>
-                              <button
-                                onClick={() => toggleFilters(block.id)}
-                                className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
-                              >
-                                <XMarkIcon className="h-4 w-4" />
-                              </button>
+                      {/* Time Filter Edit Panel */}
+                      {(block.timeBefore || block.timeAfter) && expandedFilters.has(block.id) && (
+                        <div className="w-full bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg p-3 space-y-2">
+                          {block.timeBefore && (
+                            <div>
+                              <label className="block text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">
+                                Before Time
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={block.timeBefore.minutes}
+                                  onChange={(e) => updateTimeFilter(block.id, 'before', Number(e.target.value), block.timeBefore!.seconds)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-16 px-2 py-1 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded"
+                                />
+                                <span className="text-xs">min</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={block.timeBefore.seconds}
+                                  onChange={(e) => updateTimeFilter(block.id, 'before', block.timeBefore!.minutes, Number(e.target.value))}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-16 px-2 py-1 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded"
+                                />
+                                <span className="text-xs">sec</span>
+                              </div>
                             </div>
+                          )}
+                          {block.timeAfter && (
+                            <div>
+                              <label className="block text-xs font-medium text-teal-700 dark:text-teal-400 mb-1">
+                                After Time
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={block.timeAfter.minutes}
+                                  onChange={(e) => updateTimeFilter(block.id, 'after', Number(e.target.value), block.timeAfter!.seconds)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-16 px-2 py-1 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded"
+                                />
+                                <span className="text-xs">min</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="59"
+                                  value={block.timeAfter.seconds}
+                                  onChange={(e) => updateTimeFilter(block.id, 'after', block.timeAfter!.minutes, Number(e.target.value))}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-16 px-2 py-1 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded"
+                                />
+                                <span className="text-xs">sec</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Advanced Filters Panel */}
+                      {expandedFilters.has(block.id) && (
+                        <div className={`w-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-b-lg shadow-lg p-4 space-y-3 ${SHOT_TYPE_COLORS[block.shotType].replace('bg-', 'border-t-4 border-t-')}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wide">
+                              Shot #{idx + 1} Filters
+                            </h4>
+                          </div>
 
                             {/* Players */}
                             <div>
@@ -447,13 +615,16 @@ export default function SequenceBuilder({
                                 />
                               </div>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                        </div>
+                      )}
 
-                      {/* Arrow */}
+                      {/* Down arrow to next shot */}
                       {idx < sequence.length - 1 && (
-                        <ArrowRightIcon className="h-4 w-4 text-zinc-400" />
+                        <div className="flex justify-center py-1">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-zinc-400 dark:text-zinc-500">
+                            <path fillRule="evenodd" d="M10 3a.75.75 0 01.75.75v10.638l3.96-4.158a.75.75 0 111.08 1.04l-5.25 5.5a.75.75 0 01-1.08 0l-5.25-5.5a.75.75 0 111.08-1.04l3.96 4.158V3.75A.75.75 0 0110 3z" clipRule="evenodd" />
+                          </svg>
+                        </div>
                       )}
                     </div>
                   ))}
@@ -478,6 +649,29 @@ export default function SequenceBuilder({
                   {shotType}
                 </div>
               ))}
+            </div>
+          </div>
+
+          {/* Time Filter Elements */}
+          <div>
+            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+              Drag time filters onto shots
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <div
+                draggable
+                onDragStart={() => handleDragStartTimeFilter('before')}
+                className="bg-orange-500 text-white px-4 py-2 rounded-lg font-medium text-sm cursor-move hover:shadow-lg transition-all hover:scale-105"
+              >
+                Before Time
+              </div>
+              <div
+                draggable
+                onDragStart={() => handleDragStartTimeFilter('after')}
+                className="bg-teal-500 text-white px-4 py-2 rounded-lg font-medium text-sm cursor-move hover:shadow-lg transition-all hover:scale-105"
+              >
+                After Time
+              </div>
             </div>
           </div>
 
