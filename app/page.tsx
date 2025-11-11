@@ -552,9 +552,9 @@ export default function Home() {
 
       <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Left Column: Video + Heatmap */}
-          <div className="lg:col-span-2 space-y-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:h-[calc(100vh-200px)]">
+          {/* Left Column: Video + Heatmap (Sticky) */}
+          <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-6 lg:self-start lg:overflow-y-auto lg:max-h-[calc(100vh-200px)]">
             {/* Video Player and Court Heatmap */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               {/* Video Player */}
@@ -760,8 +760,8 @@ export default function Home() {
             )}
           </div>
 
-          {/* Right Column: Filters + Shot List */}
-          <div className="space-y-4">
+          {/* Right Column: Filters + Shot List (Scrollable) */}
+          <div className="space-y-4 lg:overflow-y-auto lg:max-h-[calc(100vh-200px)]">
             {/* Sequence Builder (replaces Enhanced Filters) */}
             <SequenceBuilder
               shots={shots}
