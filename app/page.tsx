@@ -14,6 +14,7 @@ import EnhancedFilters, { FilterState } from '@/components/EnhancedFilters';
 import StatsDashboard from '@/components/StatsDashboard';
 import ExportDialog from '@/components/ExportDialog';
 import PlayerSelector from '@/components/PlayerSelector';
+import SequenceBuilder from '@/components/SequenceBuilder';
 import { ChartBarIcon, ArrowDownTrayIcon, XMarkIcon, InformationCircleIcon, CpuChipIcon } from '@heroicons/react/24/outline';
 
 export default function Home() {
@@ -62,6 +63,10 @@ export default function Home() {
   const [trajectoryMatchedShots, setTrajectoryMatchedShots] = useState<Shot[]>([]);
   const [drawMode, setDrawMode] = useState(false);
   const [drawnPath, setDrawnPath] = useState<{ x: number; y: number }[]>([]);
+
+  // Sequence state
+  const [sequenceLength, setSequenceLength] = useState<number>(0);
+  const [isSequenceMode, setIsSequenceMode] = useState(false);
 
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
@@ -757,13 +762,22 @@ export default function Home() {
 
           {/* Right Column: Filters + Shot List */}
           <div className="space-y-4">
-            {/* Enhanced Filters */}
-            <EnhancedFilters
-              filters={filters}
-              onChange={setFilters}
-              availableShotTypes={shotTypes}
+            {/* Sequence Builder (replaces Enhanced Filters) */}
+            <SequenceBuilder
+              shots={shots}
+              onSequenceMatch={(matchedShots, seqLength) => {
+                setFilteredShots(matchedShots);
+                setSequenceLength(seqLength);
+                setIsSequenceMode(seqLength > 0);
+                if (matchedShots.length > 0) {
+                  setSearchResponse(`Found ${matchedShots.length / seqLength} matching sequences`);
+                } else {
+                  setSearchResponse('No sequences found matching your pattern');
+                }
+              }}
               availablePlayers={players}
-              onClear={clearFilters}
+              playerNames={playerNames}
+              availableShotTypes={shotTypes}
             />
 
             {/* Shot List */}
@@ -811,62 +825,204 @@ export default function Home() {
                 ref={shotListContainerRef}
                 className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-400 dark:scrollbar-thumb-zinc-600"
               >
-                {filteredShots.map((shot) => (
-                  <div
-                    key={shot.index}
-                    ref={(el) => { shotListRef.current[shot.index] = el; }}
-                    onClick={() => jumpToShot(shot)}
-                    className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
-                      lockedShot?.index === shot.index
-                        ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500'
-                        : selectedShot?.index === shot.index
-                        ? 'bg-blue-50 dark:bg-blue-900/20'
-                        : ''
-                    }`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
-                            {shot.shot_label}
-                          </span>
-                          <span className="text-xs text-zinc-600 dark:text-zinc-400">
-                            {getPlayerDisplayName(shot.player_id)}
-                          </span>
-                          {lockedShot?.index === shot.index && (
-                            <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs font-medium">
-                              🔒 Locked
-                            </span>
-                          )}
-                          {shot.winner_error && (
-                            <span
-                              className={`px-2 py-0.5 rounded text-xs font-medium ${
-                                shot.winner_error === 'winner'
-                                  ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                                  : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                              }`}
-                            >
-                              {shot.winner_error}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                          {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                          {formatTime(shot.timestamp || 0)}
-                        </div>
-                        {shot.shot_rating > 0 && (
-                          <div className="text-xs text-amber-600 dark:text-amber-400">
-                            ⭐ {shot.shot_rating.toFixed(1)}
+                {isSequenceMode && sequenceLength > 0 ? (
+                  // Grouped sequence view
+                  (() => {
+                    const sequences: Shot[][] = [];
+                    for (let i = 0; i < filteredShots.length; i += sequenceLength) {
+                      sequences.push(filteredShots.slice(i, i + sequenceLength));
+                    }
+
+                    return sequences.map((sequence, seqIdx) => (
+                      <div key={`seq-${seqIdx}`} className="border-b-4 border-zinc-300 dark:border-zinc-600">
+                        {/* Sequence Header */}
+                        <div className="p-2 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
+                          <div className="flex items-center justify-between">
+                            <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                              Sequence {seqIdx + 1}
+                            </div>
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  if (videoRef.current && sequence[0]) {
+                                    const startShot = sequence[0];
+                                    const endShot = sequence[sequence.length - 1];
+                                    if (startShot.startTime !== undefined && endShot.endTime !== undefined) {
+                                      const seqLock: Shot = {
+                                        ...startShot,
+                                        index: -3, // Sequence lock
+                                        startTime: startShot.startTime,
+                                        endTime: endShot.endTime,
+                                      };
+                                      videoRef.current.currentTime = startShot.startTime;
+                                      setSelectedShot(startShot);
+                                      setLockedShot(seqLock);
+                                      videoRef.current.play();
+                                    }
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded transition-colors"
+                                title="Play this sequence in a loop"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                                </svg>
+                                Sequence
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (videoRef.current && sequence[0]) {
+                                    const rallyNumber = sequence[0].group;
+                                    const rallyShotsInOrder = shots.filter(s => s.group === rallyNumber).sort((a, b) => a.index - b.index);
+                                    if (rallyShotsInOrder.length > 0) {
+                                      const rallyStart = rallyShotsInOrder[0];
+                                      const rallyEnd = rallyShotsInOrder[rallyShotsInOrder.length - 1];
+                                      if (rallyStart.startTime !== undefined && rallyEnd.endTime !== undefined) {
+                                        const rallyLock: Shot = {
+                                          ...sequence[0],
+                                          index: -2,
+                                          startTime: rallyStart.startTime,
+                                          endTime: rallyEnd.endTime,
+                                        };
+                                        videoRef.current.currentTime = rallyStart.startTime;
+                                        setSelectedShot(sequence[0]);
+                                        setLockedShot(rallyLock);
+                                        videoRef.current.play();
+                                      }
+                                    }
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
+                                title="Play the full rally"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                                </svg>
+                                Rally
+                              </button>
+                            </div>
                           </div>
-                        )}
+                        </div>
+
+                        {/* Shots in sequence */}
+                        {sequence.map((shot, idx) => (
+                          <div
+                            key={shot.index}
+                            ref={(el) => { shotListRef.current[shot.index] = el; }}
+                            onClick={() => jumpToShot(shot)}
+                            className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
+                              lockedShot?.index === shot.index
+                                ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500'
+                                : selectedShot?.index === shot.index
+                                ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500'
+                                : idx === 0
+                                ? 'border-l-4 border-l-purple-500'
+                                : ''
+                            }`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                  <span className="px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded text-xs font-bold">
+                                    {idx + 1}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
+                                    {shot.shot_label}
+                                  </span>
+                                  <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                                    {getPlayerDisplayName(shot.player_id)}
+                                  </span>
+                                  {shot.winner_error && (
+                                    <span
+                                      className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                        shot.winner_error === 'winner'
+                                          ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                          : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                                      }`}
+                                    >
+                                      {shot.winner_error}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                                  {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs font-medium text-zinc-900 dark:text-white">
+                                  {formatTime(shot.timestamp || 0)}
+                                </div>
+                                {shot.shot_rating > 0 && (
+                                  <div className="text-xs text-amber-600 dark:text-amber-400">
+                                    ⭐ {shot.shot_rating.toFixed(1)}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ));
+                  })()
+                ) : (
+                  // Regular shot list
+                  filteredShots.map((shot) => (
+                    <div
+                      key={shot.index}
+                      ref={(el) => { shotListRef.current[shot.index] = el; }}
+                      onClick={() => jumpToShot(shot)}
+                      className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
+                        lockedShot?.index === shot.index
+                          ? 'bg-green-50 dark:bg-green-900/20 border-l-4 border-l-green-500'
+                          : selectedShot?.index === shot.index
+                          ? 'bg-blue-50 dark:bg-blue-900/20'
+                          : ''
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
+                              {shot.shot_label}
+                            </span>
+                            <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                              {getPlayerDisplayName(shot.player_id)}
+                            </span>
+                            {lockedShot?.index === shot.index && (
+                              <span className="px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs font-medium">
+                                🔒 Locked
+                              </span>
+                            )}
+                            {shot.winner_error && (
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs font-medium ${
+                                  shot.winner_error === 'winner'
+                                    ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                    : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                                }`}
+                              >
+                                {shot.winner_error}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                            {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-xs font-medium text-zinc-900 dark:text-white">
+                            {formatTime(shot.timestamp || 0)}
+                          </div>
+                          {shot.shot_rating > 0 && (
+                            <div className="text-xs text-amber-600 dark:text-amber-400">
+                              ⭐ {shot.shot_rating.toFixed(1)}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           </div>
