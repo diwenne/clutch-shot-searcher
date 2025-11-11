@@ -34,6 +34,8 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [showReplayOverlay, setShowReplayOverlay] = useState(false);
+  const [replayLabel, setReplayLabel] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
   const shotListRef = useRef<{ [key: number]: HTMLDivElement | null }>({});
   const shotListContainerRef = useRef<HTMLDivElement>(null);
@@ -195,8 +197,9 @@ export default function Home() {
       // If a shot is locked, check if we've reached the end of its segment
       if (lockedShot && lockedShot.endTime !== undefined) {
         if (video.currentTime >= lockedShot.endTime) {
-          // Loop the shot by going back to start
-          video.currentTime = lockedShot.startTime || 0;
+          // Show replay overlay instead of auto-looping
+          video.pause();
+          setShowReplayOverlay(true);
         }
       } else if (isPlaying && filteredShots.length > 0) {
         // Normal playback: Find shot closest to current time
@@ -320,6 +323,8 @@ export default function Home() {
     if (lockedShot && lockedShot.index === shot.index) {
       setLockedShot(null);
       setSelectedShot(null);
+      setShowReplayOverlay(false);
+      setReplayLabel('');
       if (videoRef.current) {
         videoRef.current.pause();
       }
@@ -329,8 +334,19 @@ export default function Home() {
     // Lock the new shot and play only that shot's segment
     setLockedShot(shot);
     setSelectedShot(shot);
+    setShowReplayOverlay(false);
+    setReplayLabel(`${shot.shot_label} by ${getPlayerDisplayName(shot.player_id)}\n${formatTime(shot.timestamp || 0)}`);
     if (videoRef.current && shot.startTime !== undefined) {
       videoRef.current.currentTime = shot.startTime;
+      videoRef.current.play();
+    }
+  };
+
+  // Replay the current locked shot/sequence/rally
+  const handleReplay = () => {
+    if (videoRef.current && lockedShot && lockedShot.startTime !== undefined) {
+      videoRef.current.currentTime = lockedShot.startTime;
+      setShowReplayOverlay(false);
       videoRef.current.play();
     }
   };
@@ -350,6 +366,8 @@ export default function Home() {
         videoRef.current.currentTime = firstShot.startTime;
         setSelectedShot(firstShot);
         setLockedShot(null); // Clear any locked shot
+        setShowReplayOverlay(false);
+        setReplayLabel('');
         videoRef.current.play();
       }
     }
@@ -584,17 +602,53 @@ export default function Home() {
             {/* Video Player and Court Heatmap */}
             <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               {/* Video Player */}
-              <div className="md:col-span-3 bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
-                <video
-                  ref={videoRef}
-                  src="/data/original-video.mp4"
-                  controls
-                  preload="metadata"
-                  className="w-full bg-zinc-900"
-                  poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect width='1920' height='1080' fill='%2318181b'/%3E%3Ctext x='50%25' y='50%25' font-family='system-ui' font-size='48' fill='%2371717a' text-anchor='middle' dominant-baseline='middle'%3EClick to load video%3C/text%3E%3C/svg%3E"
-                >
-                  Your browser does not support the video tag.
-                </video>
+              <div className="md:col-span-3 bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden relative">
+                <div className="relative">
+                  <video
+                    ref={videoRef}
+                    src="/data/original-video.mp4"
+                    controls
+                    preload="metadata"
+                    className="w-full bg-zinc-900"
+                    poster="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1920' height='1080'%3E%3Crect width='1920' height='1080' fill='%2318181b'/%3E%3Ctext x='50%25' y='50%25' font-family='system-ui' font-size='48' fill='%2371717a' text-anchor='middle' dominant-baseline='middle'%3EClick to load video%3C/text%3E%3C/svg%3E"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+
+                  {/* Replay Overlay */}
+                  {showReplayOverlay && (
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-4 z-10">
+                      <button
+                        onClick={handleReplay}
+                        className="group flex flex-col items-center gap-3 px-8 py-6 bg-white dark:bg-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-700 rounded-xl shadow-xl transition-all transform hover:scale-105"
+                      >
+                        <div className="flex items-center justify-center w-16 h-16 bg-blue-600 hover:bg-blue-700 rounded-full transition-colors">
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-8 h-8 text-white">
+                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                          </svg>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-lg font-semibold text-zinc-900 dark:text-white mb-1">
+                            Replay
+                          </div>
+                          <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                            {replayLabel}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowReplayOverlay(false);
+                          setLockedShot(null);
+                          setReplayLabel('');
+                        }}
+                        className="px-4 py-2 text-sm text-white hover:text-zinc-300 transition-colors"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 {selectedShot && (
                   <div className="p-4 bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700">
@@ -880,15 +934,20 @@ export default function Home() {
                                         startTime: startShot.startTime,
                                         endTime: endShot.endTime,
                                       };
+                                      // Build shot sequence description
+                                      const shotSequence = sequence.map(s => s.shot_label).join(' → ');
+                                      const timeRange = `${formatTime(startShot.timestamp || 0)} - ${formatTime(endShot.timestamp || 0)}`;
                                       videoRef.current.currentTime = startShot.startTime;
                                       setSelectedShot(startShot);
                                       setLockedShot(seqLock);
+                                      setShowReplayOverlay(false);
+                                      setReplayLabel(`Sequence ${seqIdx + 1}: ${shotSequence}\n${timeRange}`);
                                       videoRef.current.play();
                                     }
                                   }
                                 }}
                                 className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded transition-colors"
-                                title="Play this sequence in a loop"
+                                title="Play this sequence"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                                   <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
@@ -910,9 +969,14 @@ export default function Home() {
                                           startTime: rallyStart.startTime,
                                           endTime: rallyEnd.endTime,
                                         };
+                                        // Build rally description with first/last shots
+                                        const rallyDescription = `${rallyShotsInOrder[0].shot_label} → ... → ${rallyShotsInOrder[rallyShotsInOrder.length - 1].shot_label}`;
+                                        const timeRange = `${formatTime(rallyStart.timestamp || 0)} - ${formatTime(rallyEnd.timestamp || 0)}`;
                                         videoRef.current.currentTime = rallyStart.startTime;
                                         setSelectedShot(sequence[0]);
                                         setLockedShot(rallyLock);
+                                        setShowReplayOverlay(false);
+                                        setReplayLabel(`Rally #${rallyNumber} (${rallyShotsInOrder.length} shots)\n${rallyDescription}\n${timeRange}`);
                                         videoRef.current.play();
                                       }
                                     }
