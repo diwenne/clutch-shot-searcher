@@ -392,7 +392,7 @@ export default function CourtHeatmap({
           const color = getShotColor(shot);
 
           return (
-            <g key={shot.index}>
+            <g key={`heatmap-shot-${shot.index}-${index}`}>
               {/* Shot dot */}
               <circle
                 cx={x * 100}

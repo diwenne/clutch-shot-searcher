@@ -71,8 +71,9 @@ export default function Home() {
   const [isSequenceMode, setIsSequenceMode] = useState(false);
   const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
 
-  // Manually removed shots (temporary - resets when filters change)
+  // Manually removed shots/sequences (temporary - resets when filters change)
   const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
+  const [manuallyRemovedSequences, setManuallyRemovedSequences] = useState<Set<number>>(new Set());
 
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
@@ -96,6 +97,14 @@ export default function Home() {
     e.stopPropagation(); // Prevent jumping to the shot
     if (confirm('Remove this shot from the list? (This is temporary - the shot will return if you regenerate the list)')) {
       setManuallyRemovedShots(prev => new Set(prev).add(shotIndex));
+    }
+  };
+
+  // Manually remove a sequence from the filtered list
+  const removeSequenceFromList = (sequenceIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Remove this sequence from the list? (This is temporary - the sequence will return if you regenerate the list)')) {
+      setManuallyRemovedSequences(prev => new Set(prev).add(sequenceIndex));
     }
   };
 
@@ -442,8 +451,9 @@ export default function Home() {
     // Clear sequence when doing regular search
     setNlpSequence([]);
 
-    // Reset manually removed shots when filters change
+    // Reset manually removed shots/sequences when filters change
     setManuallyRemovedShots(new Set());
+    setManuallyRemovedSequences(new Set());
 
     setSearchResponse(response || '');
 
@@ -590,7 +600,55 @@ export default function Home() {
   // Handle export
   const handleExport = async (selectedShots: Shot[], mode: 'separate' | 'concatenated') => {
     setShowExportDialog(false);
-    alert('Export feature coming soon! 🚧');
+
+    try {
+      // Show loading state
+      const loadingMessage = mode === 'concatenated'
+        ? `Exporting ${selectedShots.length} shots as concatenated video...`
+        : `Exporting ${selectedShots.length} separate video files...`;
+
+      setSearchResponse(loadingMessage);
+
+      const response = await fetch('/api/export-video', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          shots: selectedShots,
+          mode,
+          videoPath: '/data/original-video.mp4'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Export failed');
+      }
+
+      // Show success message with download links
+      if (mode === 'concatenated') {
+        setSearchResponse(`✅ Export complete! Video saved to public/exports/`);
+        // Open the video in a new tab
+        window.open(data.videoUrl, '_blank');
+      } else {
+        setSearchResponse(`✅ Export complete! ${data.files.length} videos saved to public/exports/`);
+      }
+
+      // Also offer to download the documentation
+      if (data.docUrl) {
+        const downloadDoc = confirm('Export complete! Download documentation file?');
+        if (downloadDoc) {
+          window.open(data.docUrl, '_blank');
+        }
+      }
+
+    } catch (error: any) {
+      console.error('Export error:', error);
+      setSearchResponse(`❌ Export failed: ${error.message}`);
+      alert(`Export failed: ${error.message}`);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -991,6 +1049,7 @@ export default function Home() {
                 setSequenceLength(seqLength);
                 setIsSequenceMode(seqLength > 0);
                 setManuallyRemovedShots(new Set()); // Reset manual removals
+                setManuallyRemovedSequences(new Set());
                 if (matchedShots.length > 0) {
                   setSearchResponse(`Found ${matchedShots.length / seqLength} matching sequences`);
                 } else {
@@ -1008,10 +1067,10 @@ export default function Home() {
               <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
-                    Shot List ({filteredShots.length})
+                    Shot List ({isSequenceMode ? filteredShots.length - (manuallyRemovedSequences.size * sequenceLength) : filteredShots.length - manuallyRemovedShots.size})
                   </h2>
                   <div className="flex items-center gap-2">
-                    {filteredShots.length !== shots.length && (
+                    {filteredShots.length !== shots.length && !isSequenceMode && (
                       <button
                         onClick={() => {
                           clearFilters();
@@ -1023,6 +1082,7 @@ export default function Home() {
                           setSearchResponse('');
                           setAnalysisResult('');
                           setManuallyRemovedShots(new Set());
+                          setManuallyRemovedSequences(new Set());
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg transition-colors"
                       >
@@ -1077,13 +1137,19 @@ export default function Home() {
                       sequences.push(filteredShots.slice(i, i + sequenceLength));
                     }
 
-                    return sequences.map((sequence, seqIdx) => (
-                      <div key={`seq-${seqIdx}`} className="border-b-4 border-zinc-300 dark:border-zinc-600">
+                    // Filter out manually removed sequences
+                    const visibleSequences = sequences.filter((_, idx) => !manuallyRemovedSequences.has(idx));
+
+                    return visibleSequences.map((sequence, seqIdx) => {
+                      // Get the original sequence index before filtering
+                      const originalSeqIdx = sequences.indexOf(sequence);
+                      return (
+                      <div key={`seq-${originalSeqIdx}`} className="border-b-4 border-zinc-300 dark:border-zinc-600">
                         {/* Sequence Header */}
                         <div className="p-2 bg-zinc-100 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
                           <div className="flex items-center justify-between">
                             <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                              Sequence {seqIdx + 1}
+                              Sequence {originalSeqIdx + 1}
                             </div>
                             <div className="flex gap-1">
                               <button
@@ -1105,7 +1171,7 @@ export default function Home() {
                                       setSelectedShot(startShot);
                                       setLockedShot(seqLock);
                                       setShowReplayOverlay(false);
-                                      setReplayLabel(`Sequence ${seqIdx + 1}: ${shotSequence}\n${timeRange}`);
+                                      setReplayLabel(`Sequence ${originalSeqIdx + 1}: ${shotSequence}\n${timeRange}`);
                                       videoRef.current.play();
                                     }
                                   }
@@ -1118,6 +1184,13 @@ export default function Home() {
                                 </svg>
                                 Sequence
                               </button>
+                              <button
+                                onClick={(e) => removeSequenceFromList(originalSeqIdx, e)}
+                                className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                                title="Remove sequence from list (temporary)"
+                              >
+                                <XMarkIcon className="h-4 w-4 text-red-600 dark:text-red-400" />
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -1125,7 +1198,7 @@ export default function Home() {
                         {/* Shots in sequence */}
                         {sequence.map((shot, idx) => (
                           <div
-                            key={shot.index}
+                            key={`seq-${seqIdx}-shot-${idx}`}
                             ref={(el) => { shotListRef.current[shot.index] = el; }}
                             onClick={() => jumpToShot(shot)}
                             className={`p-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer transition-colors ${
@@ -1164,32 +1237,24 @@ export default function Home() {
                                   {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-right">
-                                  <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                                    {shot.startTime !== undefined && shot.endTime !== undefined
-                                      ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
-                                      : formatTime(shot.timestamp || 0)}
-                                  </div>
-                                  {shot.shot_rating > 0 && (
-                                    <div className="text-xs text-amber-600 dark:text-amber-400">
-                                      ⭐ {shot.shot_rating.toFixed(1)}
-                                    </div>
-                                  )}
+                              <div className="text-right">
+                                <div className="text-xs font-medium text-zinc-900 dark:text-white">
+                                  {shot.startTime !== undefined && shot.endTime !== undefined
+                                    ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
+                                    : formatTime(shot.timestamp || 0)}
                                 </div>
-                                <button
-                                  onClick={(e) => removeShotFromList(shot.index, e)}
-                                  className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
-                                  title="Remove from list (temporary)"
-                                >
-                                  <XMarkIcon className="h-4 w-4 text-red-600 dark:text-red-400" />
-                                </button>
+                                {shot.shot_rating > 0 && (
+                                  <div className="text-xs text-amber-600 dark:text-amber-400">
+                                    ⭐ {shot.shot_rating.toFixed(1)}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                    ));
+                    );
+                    });
                   })()
                 ) : (
                   // Regular shot list
