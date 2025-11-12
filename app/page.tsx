@@ -46,6 +46,7 @@ export default function Home() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [searchResponse, setSearchResponse] = useState<string>('');
   const [analysisResult, setAnalysisResult] = useState<string>('');
+  const [exportProgress, setExportProgress] = useState<{ percent: number; status: string } | null>(null);
 
   // Filter state
   const [filters, setFilters] = useState<FilterState>({
@@ -599,15 +600,27 @@ export default function Home() {
 
   // Handle export
   const handleExport = async (selectedShots: Shot[], mode: 'separate' | 'concatenated') => {
+    console.log('🎬 Export started:', { shots: selectedShots.length, mode });
     setShowExportDialog(false);
+    setExportProgress({ percent: 0, status: 'Starting export...' });
 
     try {
-      // Show loading state
-      const loadingMessage = mode === 'concatenated'
-        ? `Exporting ${selectedShots.length} shots as concatenated video...`
-        : `Exporting ${selectedShots.length} separate video files...`;
+      setSearchResponse(`Processing ${selectedShots.length} shots...`);
 
-      setSearchResponse(loadingMessage);
+      // Simulate realistic progress
+      const progressInterval = setInterval(() => {
+        setExportProgress(prev => {
+          if (!prev) return null;
+          const newPercent = Math.min(prev.percent + Math.random() * 3, 90);
+          let status = 'Processing video with FFmpeg...';
+          if (newPercent < 30) status = 'Extracting clips...';
+          else if (newPercent < 60) status = 'Concatenating shots...';
+          else if (newPercent < 90) status = 'Encoding final video...';
+          return { percent: Math.floor(newPercent), status };
+        });
+      }, 500);
+
+      console.log('📡 Calling API...');
 
       const response = await fetch('/api/export-video', {
         method: 'POST',
@@ -621,33 +634,44 @@ export default function Home() {
         }),
       });
 
+      clearInterval(progressInterval);
+      setExportProgress({ percent: 95, status: 'Finalizing...' });
+
+      console.log('📥 Response received:', response.status);
       const data = await response.json();
+      console.log('📦 Data:', data);
 
       if (!response.ok) {
         throw new Error(data.error || 'Export failed');
       }
 
-      // Show success message with download links
-      if (mode === 'concatenated') {
-        setSearchResponse(`✅ Export complete! Video saved to public/exports/`);
-        // Open the video in a new tab
-        window.open(data.videoUrl, '_blank');
-      } else {
-        setSearchResponse(`✅ Export complete! ${data.files.length} videos saved to public/exports/`);
-      }
+      setExportProgress({ percent: 100, status: 'Download starting...' });
 
-      // Also offer to download the documentation
-      if (data.docUrl) {
-        const downloadDoc = confirm('Export complete! Download documentation file?');
-        if (downloadDoc) {
-          window.open(data.docUrl, '_blank');
-        }
-      }
+      // Always concatenated mode - download zip file
+      setSearchResponse(`✅ Export complete! Downloading zip...`);
+
+      // Download zip file containing video + info txt
+      const zipLink = document.createElement('a');
+      zipLink.href = data.zipUrl;
+      zipLink.download = data.filename;
+      document.body.appendChild(zipLink);
+      zipLink.click();
+      document.body.removeChild(zipLink);
+
+      setTimeout(() => {
+        setSearchResponse(`✅ Downloaded! Check your Downloads folder for:
+• ${data.filename} (${(data.fileSize / 1024 / 1024).toFixed(2)} MB)
+  Contains: ${data.folderName}/
+    - concatenated_${selectedShots.length}_shots.mp4
+    - shot_info.txt`);
+        setExportProgress(null);
+      }, 1000);
 
     } catch (error: any) {
       console.error('Export error:', error);
       setSearchResponse(`❌ Export failed: ${error.message}`);
-      alert(`Export failed: ${error.message}`);
+      setExportProgress(null);
+      alert(`Export failed: ${error.message}\n\nMake sure FFmpeg is installed: brew install ffmpeg`);
     }
   };
 
@@ -745,13 +769,33 @@ export default function Home() {
               playerDisplayName={selectedPlayer ? getPlayerDisplayName(selectedPlayer) : null}
             />
 
+            {/* Export Progress */}
+            {exportProgress && (
+              <div className="px-4 py-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                    {exportProgress.status}
+                  </p>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    {exportProgress.percent}%
+                  </p>
+                </div>
+                <div className="w-full bg-blue-200 dark:bg-blue-900 rounded-full h-2">
+                  <div
+                    className="bg-blue-600 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${exportProgress.percent}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Search Response */}
-            {searchResponse && (
+            {searchResponse && !exportProgress && (
               <div className="flex items-start gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-lg">
                 <div className="flex-shrink-0 mt-0.5">
                   <InformationCircleIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                 </div>
-                <p className="text-sm text-zinc-900 dark:text-zinc-100 flex-1">
+                <p className="text-sm text-zinc-900 dark:text-zinc-100 flex-1 whitespace-pre-line">
                   {searchResponse}
                 </p>
                 <button
@@ -1348,14 +1392,32 @@ export default function Home() {
       />
 
       {/* Export Dialog */}
-      {showExportDialog && (
-        <ExportDialog
-          shots={filteredShots}
-          videoPath="/data/original-video.mp4"
-          onClose={() => setShowExportDialog(false)}
-          onExport={handleExport}
-        />
-      )}
+      {showExportDialog && (() => {
+        // Calculate visible shots after manual removals
+        let visibleShots = filteredShots;
+
+        if (isSequenceMode && sequenceLength > 0) {
+          // In sequence mode: filter out removed sequences
+          const sequences: Shot[][] = [];
+          for (let i = 0; i < filteredShots.length; i += sequenceLength) {
+            sequences.push(filteredShots.slice(i, i + sequenceLength));
+          }
+          const visibleSequences = sequences.filter((_, idx) => !manuallyRemovedSequences.has(idx));
+          visibleShots = visibleSequences.flat();
+        } else {
+          // In regular mode: filter out manually removed shots
+          visibleShots = filteredShots.filter(shot => !manuallyRemovedShots.has(shot.index));
+        }
+
+        return (
+          <ExportDialog
+            shots={visibleShots}
+            videoPath="/data/original-video.mp4"
+            onClose={() => setShowExportDialog(false)}
+            onExport={handleExport}
+          />
+        );
+      })()}
 
       </section>
     </div>

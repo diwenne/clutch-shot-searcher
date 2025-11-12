@@ -1,0 +1,76 @@
+================================================================================
+VIDEO EXPORT DOCUMENTATION
+================================================================================
+
+Export Mode: concatenated
+Total Shots: 6
+Export Date: 2025-11-12T01:02:05.255Z
+
+Output File: export_1762909138164.mp4
+
+================================================================================
+SHOT LIST
+================================================================================
+
+Shot 1:
+  Index: 20
+  Type: lob
+  Player: player-193
+  Time Range: 2390.53s - 2391.40s
+  Duration: 0.87s
+  Direction: straight
+  Rating: 9.3
+
+Shot 2:
+  Index: 21
+  Type: overhead
+  Player: player-113
+  Time Range: 2391.40s - 2392.10s
+  Duration: 0.70s
+  Direction: straight
+  Outcome: winner
+  Rating: 12.0
+
+Shot 3:
+  Index: 22
+  Type: volley
+  Player: player-193
+  Time Range: 2392.10s - 2396.93s
+  Duration: 4.83s
+  Direction: cross/left
+  Outcome: error
+  Rating: 9.3
+
+Shot 4:
+  Index: 875
+  Type: lob
+  Player: player-350
+  Time Range: 5195.10s - 5196.37s
+  Duration: 1.27s
+  Direction: straight
+  Rating: 12.7
+
+Shot 5:
+  Index: 876
+  Type: overhead
+  Player: player-367
+  Time Range: 5196.37s - 5197.37s
+  Duration: 1.00s
+  Direction: straight
+  Rating: 9.7
+
+Shot 6:
+  Index: 877
+  Type: volley
+  Player: player-350
+  Time Range: 5197.37s - 5208.37s
+  Duration: 11.00s
+  Direction: unknown
+  Outcome: winner
+  Rating: 11.9
+
+
+================================================================================
+SUMMARY
+================================================================================
+Total Duration: 19.67s (0m 19s)

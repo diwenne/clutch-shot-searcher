@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, unlink, mkdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, unlink, rm } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
+
+export const maxDuration = 300; // 5 minutes timeout
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,24 +25,43 @@ export async function POST(request: NextRequest) {
     }
 
     const inputVideoPath = path.join(process.cwd(), 'public', videoPath);
+
+    if (!existsSync(inputVideoPath)) {
+      return NextResponse.json({ error: `Video file not found: ${videoPath}` }, { status: 404 });
+    }
+
     const timestamp = Date.now();
 
     if (mode === 'concatenated') {
+      // Create a folder for this export
+      const exportFolderName = `badminton_export_${new Date().toISOString().split('T')[0]}_${shots.length}shots`;
+      const exportFolderPath = path.join(outputDir, exportFolderName);
+
+      // Create export folder
+      if (!existsSync(exportFolderPath)) {
+        await mkdir(exportFolderPath, { recursive: true });
+      }
+
       // Create a concatenated video
-      const outputFileName = `export_concatenated_${timestamp}.mp4`;
-      const outputPath = path.join(outputDir, outputFileName);
+      const outputFileName = `concatenated_${shots.length}_shots.mp4`;
+      const outputPath = path.join(exportFolderPath, outputFileName);
       const filterComplex = [];
       const inputs = [];
+
+      console.log(`Processing ${shots.length} shots for concatenation...`);
 
       // Build FFmpeg filter complex for concatenation
       for (let i = 0; i < shots.length; i++) {
         const shot = shots[i];
         const start = shot.startTime || shot.timestamp;
-        const duration = shot.endTime ? (shot.endTime - start) : (shot.duration || 3);
+        const end = shot.endTime;
+        const duration = end ? (end - start) : (shot.duration || 3);
 
         // Extract each clip and scale/pad to same size
         filterComplex.push(
-          `[0:v]trim=start=${start}:duration=${duration},setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v${i}]`,
+          `[0:v]trim=start=${start}:duration=${duration},setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v${i}]`
+        );
+        filterComplex.push(
           `[0:a]atrim=start=${start}:duration=${duration},asetpts=PTS-STARTPTS[a${i}]`
         );
         inputs.push(`[v${i}][a${i}]`);
@@ -52,59 +74,101 @@ export async function POST(request: NextRequest) {
       const filterComplexStr = filterComplex.join(';');
 
       // Execute FFmpeg command
-      const command = `ffmpeg -i "${inputVideoPath}" -filter_complex "${filterComplexStr}" -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 23 -c:a aac "${outputPath}"`;
+      const command = `ffmpeg -i "${inputVideoPath}" -filter_complex "${filterComplexStr}" -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 23 -c:a aac -y "${outputPath}"`;
 
-      console.log('Executing FFmpeg command:', command);
-      await execAsync(command, { maxBuffer: 1024 * 1024 * 10 }); // 10MB buffer
+      console.log('Executing FFmpeg...');
+      try {
+        const { stdout, stderr } = await execAsync(command, { maxBuffer: 1024 * 1024 * 50 }); // 50MB buffer
+        console.log('FFmpeg completed successfully');
+      } catch (error: any) {
+        console.error('FFmpeg error:', error.stderr || error.message);
+        throw new Error(`FFmpeg processing failed: ${error.message}`);
+      }
 
       // Generate documentation
-      const docFileName = `export_concatenated_${timestamp}.txt`;
-      const docPath = path.join(outputDir, docFileName);
-      const documentation = generateDocumentation(shots, mode);
+      const docFileName = `shot_info.txt`;
+      const docPath = path.join(exportFolderPath, docFileName);
+      const documentation = generateDocumentation(shots, mode, outputFileName);
       await writeFile(docPath, documentation);
+
+      // Create a zip file using native zip command
+      const zipFileName = `${exportFolderName}.zip`;
+      const zipPath = path.join(outputDir, zipFileName);
+
+      console.log('Creating zip file...');
+      try {
+        // Use native zip command to create zip file
+        // -r: recursive, -j: junk (don't store) directory paths, we'll add folder name manually
+        await execAsync(`cd "${outputDir}" && zip -r "${zipFileName}" "${exportFolderName}"`);
+      } catch (error: any) {
+        console.error('Zip error:', error.message);
+        throw new Error(`Failed to create zip file: ${error.message}`);
+      }
+
+      const fileStats = await import('fs').then(m => m.promises.stat(outputPath));
+      const zipStats = await import('fs').then(m => m.promises.stat(zipPath));
+
+      // Clean up the unzipped folder
+      await rm(exportFolderPath, { recursive: true, force: true });
 
       return NextResponse.json({
         success: true,
-        videoUrl: `/exports/${outputFileName}`,
-        docUrl: `/exports/${docFileName}`,
+        zipUrl: `/exports/${zipFileName}`,
+        filename: zipFileName,
+        folderName: exportFolderName,
+        fileSize: zipStats.size,
+        videoSize: fileStats.size,
         message: `Successfully exported ${shots.length} shots as concatenated video`
       });
 
     } else {
       // Export separate videos
       const exportedFiles = [];
+      const timestamp = Date.now();
+
+      console.log(`Processing ${shots.length} shots separately...`);
 
       for (let i = 0; i < shots.length; i++) {
         const shot = shots[i];
         const start = shot.startTime || shot.timestamp;
-        const duration = shot.endTime ? (shot.endTime - start) : (shot.duration || 3);
-        const outputFileName = `export_shot_${shot.index}_${timestamp}.mp4`;
+        const end = shot.endTime;
+        const duration = end ? (end - start) : (shot.duration || 3);
+        const outputFileName = `shot_${shot.index}_${timestamp}.mp4`;
         const outputPath = path.join(outputDir, outputFileName);
 
-        const command = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c:v libx264 -preset fast -crf 23 -c:a aac "${outputPath}"`;
+        const command = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c:v libx264 -preset fast -crf 23 -c:a aac -y "${outputPath}"`;
 
-        console.log(`Exporting shot ${i + 1}/${shots.length}:`, command);
-        await execAsync(command, { maxBuffer: 1024 * 1024 * 10 });
+        console.log(`Exporting shot ${i + 1}/${shots.length}...`);
+        try {
+          await execAsync(command, { maxBuffer: 1024 * 1024 * 50 });
+        } catch (error: any) {
+          console.error(`Error exporting shot ${shot.index}:`, error.message);
+          continue; // Skip failed shots
+        }
+
+        const fileStats = await import('fs').then(m => m.promises.stat(outputPath));
 
         exportedFiles.push({
           shotIndex: shot.index,
           url: `/exports/${outputFileName}`,
+          filename: outputFileName,
           shotType: shot.shot_label,
-          timestamp: start
+          timestamp: start,
+          fileSize: fileStats.size
         });
       }
 
       // Generate documentation
-      const docFileName = `export_separate_${timestamp}.txt`;
+      const docFileName = `export_${timestamp}_info.txt`;
       const docPath = path.join(outputDir, docFileName);
-      const documentation = generateDocumentation(shots, mode);
+      const documentation = generateDocumentation(shots, mode, null, exportedFiles);
       await writeFile(docPath, documentation);
 
       return NextResponse.json({
         success: true,
         files: exportedFiles,
         docUrl: `/exports/${docFileName}`,
-        message: `Successfully exported ${shots.length} separate video files`
+        message: `Successfully exported ${exportedFiles.length} separate video files`
       });
     }
 
@@ -117,7 +181,12 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function generateDocumentation(shots: any[], mode: 'separate' | 'concatenated'): string {
+function generateDocumentation(
+  shots: any[],
+  mode: 'separate' | 'concatenated',
+  outputFilename?: string | null,
+  exportedFiles?: any[]
+): string {
   const lines = [
     '='.repeat(80),
     'VIDEO EXPORT DOCUMENTATION',
@@ -127,15 +196,22 @@ function generateDocumentation(shots: any[], mode: 'separate' | 'concatenated'):
     `Total Shots: ${shots.length}`,
     `Export Date: ${new Date().toISOString()}`,
     '',
-    '='.repeat(80),
-    'SHOT LIST',
-    '='.repeat(80),
-    ''
   ];
+
+  if (mode === 'concatenated' && outputFilename) {
+    lines.push(`Output File: ${outputFilename}`);
+    lines.push('');
+  }
+
+  lines.push('='.repeat(80));
+  lines.push('SHOT LIST');
+  lines.push('='.repeat(80));
+  lines.push('');
 
   shots.forEach((shot, idx) => {
     const start = shot.startTime || shot.timestamp;
     const end = shot.endTime || (start + (shot.duration || 3));
+
     lines.push(`Shot ${idx + 1}:`);
     lines.push(`  Index: ${shot.index}`);
     lines.push(`  Type: ${shot.shot_label}`);
@@ -151,8 +227,28 @@ function generateDocumentation(shots: any[], mode: 'separate' | 'concatenated'):
     if (shot.shot_rating > 0) {
       lines.push(`  Rating: ${shot.shot_rating.toFixed(1)}`);
     }
+    if (mode === 'separate' && exportedFiles) {
+      const file = exportedFiles.find(f => f.shotIndex === shot.index);
+      if (file) {
+        lines.push(`  File: ${file.filename}`);
+        lines.push(`  Size: ${(file.fileSize / 1024 / 1024).toFixed(2)} MB`);
+      }
+    }
     lines.push('');
   });
+
+  if (mode === 'concatenated') {
+    const totalDuration = shots.reduce((sum, shot) => {
+      const start = shot.startTime || shot.timestamp;
+      const end = shot.endTime || (start + (shot.duration || 3));
+      return sum + (end - start);
+    }, 0);
+    lines.push('');
+    lines.push('='.repeat(80));
+    lines.push('SUMMARY');
+    lines.push('='.repeat(80));
+    lines.push(`Total Duration: ${totalDuration.toFixed(2)}s (${Math.floor(totalDuration / 60)}m ${Math.floor(totalDuration % 60)}s)`);
+  }
 
   return lines.join('\n');
 }
