@@ -1067,7 +1067,15 @@ export default function Home() {
               <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
-                    Shot List ({isSequenceMode ? filteredShots.length - (manuallyRemovedSequences.size * sequenceLength) : filteredShots.length - manuallyRemovedShots.size})
+                    Shot List ({(() => {
+                      if (isSequenceMode) {
+                        // In sequence mode: filteredShots hasn't been filtered by manuallyRemovedSequences yet
+                        return filteredShots.length - (manuallyRemovedSequences.size * sequenceLength);
+                      } else {
+                        // In regular mode: filteredShots is already filtered by the useEffect
+                        return filteredShots.length;
+                      }
+                    })()})
                   </h2>
                   <div className="flex items-center gap-2">
                     {filteredShots.length !== shots.length && !isSequenceMode && (
