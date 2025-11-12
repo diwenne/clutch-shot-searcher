@@ -71,6 +71,9 @@ export default function Home() {
   const [isSequenceMode, setIsSequenceMode] = useState(false);
   const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
 
+  // Manually removed shots (temporary - resets when filters change)
+  const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
+
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
   const [players, setPlayers] = useState<string[]>([]);
@@ -86,6 +89,14 @@ export default function Home() {
   // Get display name for player
   const getPlayerDisplayName = (playerId: string) => {
     return playerNames[playerId] || playerId;
+  };
+
+  // Manually remove a shot from the filtered list
+  const removeShotFromList = (shotIndex: number, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent jumping to the shot
+    if (confirm('Remove this shot from the list? (This is temporary - the shot will return if you regenerate the list)')) {
+      setManuallyRemovedShots(prev => new Set(prev).add(shotIndex));
+    }
   };
 
   // Load CSV on mount
@@ -118,6 +129,13 @@ export default function Home() {
     console.log('🔍 FILTER USEEFFECT TRIGGERED');
     console.log('📊 Current filters:', filters);
     console.log('📊 Total shots:', shots.length);
+    console.log('📊 isSequenceMode:', isSequenceMode);
+
+    // Skip filtering if in sequence mode - let SequenceBuilder control filteredShots
+    if (isSequenceMode) {
+      console.log('⏭️ SKIPPING FILTER - Sequence mode is active');
+      return;
+    }
 
     let filtered = shots;
     console.log('Step 0 - Initial:', filtered.length);
@@ -185,9 +203,14 @@ export default function Home() {
       console.log('Step 9 - After winner/error filter:', filtered.length, 'winnerError:', filters.winnerError);
     }
 
+    // Exclude manually removed shots
+    filtered = filtered.filter(shot => !manuallyRemovedShots.has(shot.index));
+    console.log('Step 10 - After manual removal:', filtered.length);
+
     console.log('✅ FINAL FILTERED SHOTS:', filtered.length);
     setFilteredShots(filtered);
-  }, [shots, filters, trajectoryMatchedShots, selectedPlayer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shots.length, filters, trajectoryMatchedShots.length, selectedPlayer, manuallyRemovedShots.size, isSequenceMode]);
 
   // No auto-scroll - let user manually scroll the shot list
 
@@ -418,6 +441,9 @@ export default function Home() {
 
     // Clear sequence when doing regular search
     setNlpSequence([]);
+
+    // Reset manually removed shots when filters change
+    setManuallyRemovedShots(new Set());
 
     setSearchResponse(response || '');
 
@@ -964,6 +990,7 @@ export default function Home() {
                 setFilteredShots(matchedShots);
                 setSequenceLength(seqLength);
                 setIsSequenceMode(seqLength > 0);
+                setManuallyRemovedShots(new Set()); // Reset manual removals
                 if (matchedShots.length > 0) {
                   setSearchResponse(`Found ${matchedShots.length / seqLength} matching sequences`);
                 } else {
@@ -995,6 +1022,7 @@ export default function Home() {
                           setSequenceLength(0);
                           setSearchResponse('');
                           setAnalysisResult('');
+                          setManuallyRemovedShots(new Set());
                         }}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg transition-colors"
                       >
@@ -1136,17 +1164,26 @@ export default function Home() {
                                   {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                                  {shot.startTime !== undefined && shot.endTime !== undefined
-                                    ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
-                                    : formatTime(shot.timestamp || 0)}
-                                </div>
-                                {shot.shot_rating > 0 && (
-                                  <div className="text-xs text-amber-600 dark:text-amber-400">
-                                    ⭐ {shot.shot_rating.toFixed(1)}
+                              <div className="flex items-center gap-2">
+                                <div className="text-right">
+                                  <div className="text-xs font-medium text-zinc-900 dark:text-white">
+                                    {shot.startTime !== undefined && shot.endTime !== undefined
+                                      ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
+                                      : formatTime(shot.timestamp || 0)}
                                   </div>
-                                )}
+                                  {shot.shot_rating > 0 && (
+                                    <div className="text-xs text-amber-600 dark:text-amber-400">
+                                      ⭐ {shot.shot_rating.toFixed(1)}
+                                    </div>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={(e) => removeShotFromList(shot.index, e)}
+                                  className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                                  title="Remove from list (temporary)"
+                                >
+                                  <XMarkIcon className="h-4 w-4 text-red-600 dark:text-red-400" />
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -1169,7 +1206,7 @@ export default function Home() {
                           : ''
                       }`}
                     >
-                      <div className="flex justify-between items-start">
+                      <div className="flex justify-between items-start gap-2">
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
@@ -1199,17 +1236,26 @@ export default function Home() {
                             {shot.zone_player} → {shot.zone_shuttle} | {shot.shot_direction}
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-xs font-medium text-zinc-900 dark:text-white">
-                            {shot.startTime !== undefined && shot.endTime !== undefined
-                              ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
-                              : formatTime(shot.timestamp || 0)}
-                          </div>
-                          {shot.shot_rating > 0 && (
-                            <div className="text-xs text-amber-600 dark:text-amber-400">
-                              ⭐ {shot.shot_rating.toFixed(1)}
+                        <div className="flex items-center gap-2">
+                          <div className="text-right">
+                            <div className="text-xs font-medium text-zinc-900 dark:text-white">
+                              {shot.startTime !== undefined && shot.endTime !== undefined
+                                ? `${formatTime(shot.startTime)} - ${formatTime(shot.endTime)}`
+                                : formatTime(shot.timestamp || 0)}
                             </div>
-                          )}
+                            {shot.shot_rating > 0 && (
+                              <div className="text-xs text-amber-600 dark:text-amber-400">
+                                ⭐ {shot.shot_rating.toFixed(1)}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={(e) => removeShotFromList(shot.index, e)}
+                            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/30 rounded transition-colors"
+                            title="Remove from list (temporary)"
+                          >
+                            <XMarkIcon className="h-4 w-4 text-red-600 dark:text-red-400" />
+                          </button>
                         </div>
                       </div>
                     </div>
