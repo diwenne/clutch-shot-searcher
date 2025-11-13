@@ -76,6 +76,27 @@ export default function Home() {
   const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
   const [manuallyRemovedSequences, setManuallyRemovedSequences] = useState<Set<number>>(new Set());
 
+  // Sequence notes (Map of sequence key to note text)
+  // Key format: "shotIndex1-shotIndex2-..." for all shots in sequence
+  const [sequenceNotes, setSequenceNotes] = useState<Map<string, string>>(() => {
+    // Load notes from localStorage on mount
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sequenceNotes');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          return new Map(Object.entries(parsed));
+        } catch (e) {
+          console.error('Failed to load sequence notes:', e);
+        }
+      }
+    }
+    return new Map();
+  });
+
+  // Track which sequence notes are expanded (Set of sequence keys)
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set());
+
   // Available options
   const [shotTypes, setShotTypes] = useState<string[]>([]);
   const [players, setPlayers] = useState<string[]>([]);
@@ -109,6 +130,38 @@ export default function Home() {
     }
   };
 
+  // Generate a unique key for a sequence based on shot indices
+  const getSequenceKey = (sequence: Shot[]): string => {
+    return sequence.map(s => s.index).join('-');
+  };
+
+  // Update sequence note
+  const updateSequenceNote = (sequence: Shot[], note: string) => {
+    const key = getSequenceKey(sequence);
+    setSequenceNotes(prev => {
+      const updated = new Map(prev);
+      if (note.trim() === '') {
+        updated.delete(key);
+      } else {
+        updated.set(key, note);
+      }
+      return updated;
+    });
+  };
+
+  // Toggle note expansion for a sequence
+  const toggleNoteExpansion = (sequenceKey: string) => {
+    setExpandedNotes(prev => {
+      const updated = new Set(prev);
+      if (updated.has(sequenceKey)) {
+        updated.delete(sequenceKey);
+      } else {
+        updated.add(sequenceKey);
+      }
+      return updated;
+    });
+  };
+
   // Helper function to calculate rally position for a shot
   const getRallyPosition = (shot: Shot): number => {
     // Find the shot's index in the full shots array
@@ -130,6 +183,14 @@ export default function Home() {
     }
     return position;
   };
+
+  // Save sequence notes to localStorage whenever they change
+  useEffect(() => {
+    if (typeof window !== 'undefined' && sequenceNotes.size > 0) {
+      const notesObject = Object.fromEntries(sequenceNotes);
+      localStorage.setItem('sequenceNotes', JSON.stringify(notesObject));
+    }
+  }, [sequenceNotes]);
 
   // Load CSV on mount
   useEffect(() => {
@@ -712,6 +773,30 @@ export default function Home() {
 
       console.log('📡 Calling API...');
 
+      // Build sequence metadata if in sequence mode
+      let sequenceMetadata: Array<{ index: number; note?: string }> | undefined;
+      if (isSequenceMode && sequenceLength > 0) {
+        sequenceMetadata = [];
+        const numSequences = Math.ceil(selectedShots.length / sequenceLength);
+
+        // Build map of visible sequence indices
+        const sequences: Shot[][] = [];
+        for (let i = 0; i < filteredShots.length; i += sequenceLength) {
+          sequences.push(filteredShots.slice(i, i + sequenceLength));
+        }
+        const visibleSequences = sequences.filter((_, idx) => !manuallyRemovedSequences.has(idx));
+
+        // For each visible sequence, add metadata with notes
+        visibleSequences.forEach((seq, exportIndex) => {
+          const sequenceKey = getSequenceKey(seq);
+          const note = sequenceNotes.get(sequenceKey);
+          sequenceMetadata!.push({
+            index: exportIndex,
+            note: note || undefined
+          });
+        });
+      }
+
       const response = await fetch('/api/export-video', {
         method: 'POST',
         headers: {
@@ -720,7 +805,9 @@ export default function Home() {
         body: JSON.stringify({
           shots: selectedShots,
           mode,
-          videoPath: '/data/original-video.mp4'
+          videoPath: '/data/original-video.mp4',
+          sequenceLength: isSequenceMode ? sequenceLength : undefined,
+          sequenceMetadata: sequenceMetadata
         }),
       });
 
@@ -1337,6 +1424,57 @@ export default function Home() {
                           </div>
                         </div>
 
+                        {/* Sequence Notes */}
+                        {(() => {
+                          const sequenceKey = getSequenceKey(sequence);
+                          const hasNote = sequenceNotes.has(sequenceKey);
+                          // Auto-expand if note exists, otherwise check manual expansion state
+                          const isExpanded = hasNote || expandedNotes.has(sequenceKey);
+
+                          return (
+                            <div className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+                              {!hasNote && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleNoteExpansion(sequenceKey);
+                                  }}
+                                  className="w-full px-2 py-1.5 text-left flex items-center justify-between hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
+                                >
+                                  <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                                    + Add note
+                                  </span>
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 20 20"
+                                    fill="currentColor"
+                                    className={`w-4 h-4 text-zinc-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                  >
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </button>
+                              )}
+                              {isExpanded && (
+                                <div className="px-2 py-2">
+                                  {hasNote && (
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">📝 Note</span>
+                                    </div>
+                                  )}
+                                  <textarea
+                                    value={sequenceNotes.get(sequenceKey) || ''}
+                                    onChange={(e) => updateSequenceNote(sequence, e.target.value)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    placeholder="Add notes for this sequence..."
+                                    className="w-full px-2 py-1.5 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    rows={2}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+
                         {/* Shots in sequence */}
                         {sequence.map((shot, idx) => (
                           <div
@@ -1511,6 +1649,9 @@ export default function Home() {
             videoPath="/data/original-video.mp4"
             onClose={() => setShowExportDialog(false)}
             onExport={handleExport}
+            sequenceLength={isSequenceMode ? sequenceLength : undefined}
+            sequenceNotes={sequenceNotes}
+            getSequenceKey={getSequenceKey}
           />
         );
       })()}

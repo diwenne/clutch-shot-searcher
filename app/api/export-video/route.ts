@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
-    const { shots, mode, videoPath } = await request.json();
+    const { shots, mode, videoPath, sequenceLength, sequenceMetadata } = await request.json();
 
     if (!shots || shots.length === 0) {
       return NextResponse.json({ error: 'No shots provided' }, { status: 400 });
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       // Generate documentation
       const docFileName = `shot_info.txt`;
       const docPath = path.join(exportFolderPath, docFileName);
-      const documentation = generateDocumentation(shots, mode, outputFileName);
+      const documentation = generateDocumentation(shots, mode, outputFileName, sequenceLength, sequenceMetadata);
       await writeFile(docPath, documentation);
 
       // Create a zip file using native zip command
@@ -161,7 +161,7 @@ export async function POST(request: NextRequest) {
       // Generate documentation
       const docFileName = `export_${timestamp}_info.txt`;
       const docPath = path.join(outputDir, docFileName);
-      const documentation = generateDocumentation(shots, mode, null, exportedFiles);
+      const documentation = generateDocumentation(shots, mode);
       await writeFile(docPath, documentation);
 
       return NextResponse.json({
@@ -185,7 +185,8 @@ function generateDocumentation(
   shots: any[],
   mode: 'separate' | 'concatenated',
   outputFilename?: string | null,
-  exportedFiles?: any[]
+  sequenceLength?: number,
+  sequenceMetadata?: Array<{ index: number; note?: string }>
 ): string {
   const lines = [
     '='.repeat(80),
@@ -203,39 +204,69 @@ function generateDocumentation(
     lines.push('');
   }
 
-  lines.push('='.repeat(80));
-  lines.push('SHOT LIST');
-  lines.push('='.repeat(80));
-  lines.push('');
-
-  shots.forEach((shot, idx) => {
-    const start = shot.startTime || shot.timestamp;
-    const end = shot.endTime || (start + (shot.duration || 3));
-
-    lines.push(`Shot ${idx + 1}:`);
-    lines.push(`  Index: ${shot.index}`);
-    lines.push(`  Type: ${shot.shot_label}`);
-    lines.push(`  Player: ${shot.player_id}`);
-    lines.push(`  Time Range: ${start.toFixed(2)}s - ${end.toFixed(2)}s`);
-    lines.push(`  Duration: ${(end - start).toFixed(2)}s`);
-    if (shot.shot_direction) {
-      lines.push(`  Direction: ${shot.shot_direction}`);
-    }
-    if (shot.winner_error) {
-      lines.push(`  Outcome: ${shot.winner_error}`);
-    }
-    if (shot.shot_rating > 0) {
-      lines.push(`  Rating: ${shot.shot_rating.toFixed(1)}`);
-    }
-    if (mode === 'separate' && exportedFiles) {
-      const file = exportedFiles.find(f => f.shotIndex === shot.index);
-      if (file) {
-        lines.push(`  File: ${file.filename}`);
-        lines.push(`  Size: ${(file.fileSize / 1024 / 1024).toFixed(2)} MB`);
-      }
-    }
+  // If sequences, group shots by sequence
+  if (sequenceLength && sequenceLength > 0) {
+    lines.push('='.repeat(80));
+    lines.push(`SEQUENCES (${Math.ceil(shots.length / sequenceLength)} sequences of ${sequenceLength} shots)`);
+    lines.push('='.repeat(80));
     lines.push('');
-  });
+
+    for (let i = 0; i < shots.length; i += sequenceLength) {
+      const sequence = shots.slice(i, i + sequenceLength);
+      const sequenceIdx = Math.floor(i / sequenceLength);
+      const metadata = sequenceMetadata?.find(m => m.index === sequenceIdx);
+
+      lines.push(`Sequence ${sequenceIdx + 1}:`);
+      if (metadata?.note) {
+        lines.push(`  NOTE: ${metadata.note}`);
+      }
+      lines.push('');
+
+      sequence.forEach((shot, idx) => {
+        const start = shot.startTime || shot.timestamp;
+        const end = shot.endTime || (start + (shot.duration || 3));
+
+        lines.push(`  Shot ${idx + 1} (Global Index: ${shot.index}):`);
+        lines.push(`    Type: ${shot.shot_label}`);
+        lines.push(`    Player: ${shot.player_id}`);
+        lines.push(`    Time Range: ${start.toFixed(2)}s - ${end.toFixed(2)}s`);
+        lines.push(`    Duration: ${(end - start).toFixed(2)}s`);
+        if (shot.shot_direction) lines.push(`    Direction: ${shot.shot_direction}`);
+        if (shot.winner_error) lines.push(`    Outcome: ${shot.winner_error}`);
+        if (shot.shot_rating > 0) lines.push(`    Rating: ${shot.shot_rating.toFixed(1)}`);
+        lines.push('');
+      });
+
+      lines.push('');
+    }
+  } else {
+    lines.push('='.repeat(80));
+    lines.push('SHOT LIST');
+    lines.push('='.repeat(80));
+    lines.push('');
+
+    shots.forEach((shot, idx) => {
+      const start = shot.startTime || shot.timestamp;
+      const end = shot.endTime || (start + (shot.duration || 3));
+
+      lines.push(`Shot ${idx + 1}:`);
+      lines.push(`  Index: ${shot.index}`);
+      lines.push(`  Type: ${shot.shot_label}`);
+      lines.push(`  Player: ${shot.player_id}`);
+      lines.push(`  Time Range: ${start.toFixed(2)}s - ${end.toFixed(2)}s`);
+      lines.push(`  Duration: ${(end - start).toFixed(2)}s`);
+      if (shot.shot_direction) {
+        lines.push(`  Direction: ${shot.shot_direction}`);
+      }
+      if (shot.winner_error) {
+        lines.push(`  Outcome: ${shot.winner_error}`);
+      }
+      if (shot.shot_rating > 0) {
+        lines.push(`  Rating: ${shot.shot_rating.toFixed(1)}`);
+      }
+      lines.push('');
+    });
+  }
 
   if (mode === 'concatenated') {
     const totalDuration = shots.reduce((sum, shot) => {

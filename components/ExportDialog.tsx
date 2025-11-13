@@ -9,9 +9,12 @@ interface ExportDialogProps {
   videoPath: string;
   onClose: () => void;
   onExport: (selectedShots: Shot[], mode: 'separate' | 'concatenated') => void;
+  sequenceLength?: number;
+  sequenceNotes?: Map<string, string>;
+  getSequenceKey?: (sequence: Shot[]) => string;
 }
 
-export default function ExportDialog({ shots, videoPath, onClose, onExport }: ExportDialogProps) {
+export default function ExportDialog({ shots, videoPath, onClose, onExport, sequenceLength, sequenceNotes, getSequenceKey }: ExportDialogProps) {
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(
     new Set(shots.map((s) => s.index))
   );
@@ -117,50 +120,93 @@ export default function ExportDialog({ shots, videoPath, onClose, onExport }: Ex
           </div>
 
           <div className="space-y-2">
-            {shots.map((shot) => {
-              const isSelected = selectedIndices.has(shot.index);
-              return (
-                <label
-                  key={shot.index}
-                  className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    isSelected
-                      ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20'
-                      : 'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-700/50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isSelected}
-                    onChange={() => toggleShot(shot.index)}
-                    className="mt-1 w-4 h-4 text-blue-600 rounded"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
-                        {shot.shot_label}
-                      </span>
-                      <span className="text-xs text-zinc-600 dark:text-zinc-400">
-                        {shot.player_id}
-                      </span>
-                      {shot.winner_error && (
-                        <span
-                          className={`px-2 py-0.5 rounded text-xs font-medium ${
-                            shot.winner_error === 'winner'
-                              ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
-                              : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
-                          }`}
-                        >
-                          {shot.winner_error}
+            {sequenceLength && sequenceLength > 0 ? (
+              // Show sequences
+              (() => {
+                const sequences: Shot[][] = [];
+                for (let i = 0; i < shots.length; i += sequenceLength) {
+                  sequences.push(shots.slice(i, i + sequenceLength));
+                }
+
+                return sequences.map((sequence, seqIdx) => {
+                  const sequenceKey = getSequenceKey ? getSequenceKey(sequence) : '';
+                  const note = sequenceNotes?.get(sequenceKey);
+
+                  return (
+                    <div key={`seq-${seqIdx}`} className="border border-zinc-300 dark:border-zinc-600 rounded-lg overflow-hidden">
+                      <div className="bg-zinc-100 dark:bg-zinc-800 p-2 border-b border-zinc-300 dark:border-zinc-600">
+                        <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                          Sequence {seqIdx + 1}
+                        </div>
+                        {note && (
+                          <div className="mt-1 text-xs text-zinc-600 dark:text-zinc-400 italic">
+                            Note: {note}
+                          </div>
+                        )}
+                      </div>
+                      <div className="p-2 space-y-1">
+                        {sequence.map((shot, idx) => (
+                          <div key={shot.index} className="text-xs text-zinc-700 dark:text-zinc-300">
+                            <span className="font-medium">{idx + 1}.</span> {shot.shot_label} by {shot.player_id}
+                            {shot.winner_error && (
+                              <span className={`ml-2 ${shot.winner_error === 'winner' ? 'text-green-600' : 'text-red-600'}`}>
+                                ({shot.winner_error})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                });
+              })()
+            ) : (
+              // Show individual shots
+              shots.map((shot) => {
+                const isSelected = selectedIndices.has(shot.index);
+                return (
+                  <label
+                    key={shot.index}
+                    className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                      isSelected
+                        ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20'
+                        : 'border-zinc-200 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-700/50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleShot(shot.index)}
+                      className="mt-1 w-4 h-4 text-blue-600 rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
+                          {shot.shot_label}
                         </span>
-                      )}
+                        <span className="text-xs text-zinc-600 dark:text-zinc-400">
+                          {shot.player_id}
+                        </span>
+                        {shot.winner_error && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              shot.winner_error === 'winner'
+                                ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'
+                                : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+                            }`}
+                          >
+                            {shot.winner_error}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                        {shot.timestamp?.toFixed(2)}s • Duration: {shot.duration?.toFixed(2)}s
+                      </div>
                     </div>
-                    <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                      {shot.timestamp?.toFixed(2)}s • Duration: {shot.duration?.toFixed(2)}s
-                    </div>
-                  </div>
-                </label>
-              );
-            })}
+                  </label>
+                );
+              })
+            )}
           </div>
         </div>
 
