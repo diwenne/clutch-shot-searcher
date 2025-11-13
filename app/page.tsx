@@ -277,9 +277,53 @@ export default function Home() {
       // If a shot is locked, check if we've reached the end of its segment
       if (lockedShot && lockedShot.endTime !== undefined) {
         if (video.currentTime >= lockedShot.endTime) {
-          // Show replay overlay instead of auto-looping
-          video.pause();
-          setShowReplayOverlay(true);
+          // Check if this is a sequence lock (index -3) and we should jump to next sequence
+          if (lockedShot.index === -3 && isSequenceMode && sequenceLength > 0) {
+            // Find which sequence just finished
+            let currentSeqIndex = -1;
+            for (let i = 0; i < filteredShots.length; i += sequenceLength) {
+              const seq = filteredShots.slice(i, i + sequenceLength);
+              if (seq.length > 0 && seq[0].startTime === lockedShot.startTime) {
+                currentSeqIndex = i / sequenceLength;
+                break;
+              }
+            }
+
+            // Jump to next sequence
+            const nextSeqStart = (currentSeqIndex + 1) * sequenceLength;
+            if (nextSeqStart < filteredShots.length) {
+              const nextSequence = filteredShots.slice(nextSeqStart, nextSeqStart + sequenceLength);
+              const firstShot = nextSequence[0];
+              const lastShot = nextSequence[nextSequence.length - 1];
+
+              if (firstShot.startTime !== undefined && lastShot.endTime !== undefined) {
+                const seqLock: Shot = {
+                  ...firstShot,
+                  index: -3,
+                  startTime: firstShot.startTime,
+                  endTime: lastShot.endTime,
+                };
+                setLockedShot(seqLock);
+                setSelectedShot(firstShot);
+                video.currentTime = firstShot.startTime;
+                // Keep playing
+              } else {
+                // No more sequences - pause
+                video.pause();
+                setShowReplayOverlay(true);
+                setLockedShot(null);
+              }
+            } else {
+              // No more sequences - pause
+              video.pause();
+              setShowReplayOverlay(true);
+              setLockedShot(null);
+            }
+          } else {
+            // Regular shot lock - show replay overlay
+            video.pause();
+            setShowReplayOverlay(true);
+          }
         }
       } else if (isPlaying && filteredShots.length > 0) {
         // Normal playback: Find shot that's currently playing (within its time range)
@@ -534,14 +578,37 @@ export default function Home() {
   // Play filtered shots from the beginning
   const playFilteredFromStart = () => {
     if (videoRef.current && filteredShots.length > 0) {
-      const firstShot = filteredShots[0];
-      if (firstShot.startTime !== undefined) {
-        videoRef.current.currentTime = firstShot.startTime;
-        setSelectedShot(firstShot);
-        setLockedShot(null); // Clear any locked shot
-        setShowReplayOverlay(false);
-        setReplayLabel('');
-        videoRef.current.play();
+      if (isSequenceMode && sequenceLength > 0) {
+        // In sequence mode: play first sequence
+        const firstSequence = filteredShots.slice(0, sequenceLength);
+        const firstShot = firstSequence[0];
+        const lastShot = firstSequence[sequenceLength - 1];
+
+        if (firstShot.startTime !== undefined && lastShot.endTime !== undefined) {
+          // Create a sequence lock that will play the entire sequence
+          const seqLock: Shot = {
+            ...firstShot,
+            index: -3, // Sequence lock marker
+            startTime: firstShot.startTime,
+            endTime: lastShot.endTime,
+          };
+          setLockedShot(seqLock);
+          setSelectedShot(firstShot);
+          setShowReplayOverlay(false);
+          videoRef.current.currentTime = firstShot.startTime;
+          videoRef.current.play();
+        }
+      } else {
+        // Regular mode: play first shot
+        const firstShot = filteredShots[0];
+        if (firstShot.startTime !== undefined) {
+          videoRef.current.currentTime = firstShot.startTime;
+          setSelectedShot(firstShot);
+          setLockedShot(null);
+          setShowReplayOverlay(false);
+          setReplayLabel('');
+          videoRef.current.play();
+        }
       }
     }
   };
