@@ -109,6 +109,28 @@ export default function Home() {
     }
   };
 
+  // Helper function to calculate rally position for a shot
+  const getRallyPosition = (shot: Shot): number => {
+    // Find the shot's index in the full shots array
+    const shotIndex = shots.findIndex(s => s.index === shot.index);
+    if (shotIndex === -1) return 1;
+
+    // Count backwards to find the start of the rally
+    let position = 1;
+    for (let i = shotIndex - 1; i >= 0; i--) {
+      if (shots[i].new_sequence) {
+        break;
+      }
+      // Only count if same rally group
+      if (shots[i].group === shot.group) {
+        position++;
+      } else {
+        break;
+      }
+    }
+    return position;
+  };
+
   // Load CSV on mount
   useEffect(() => {
     async function loadShots() {
@@ -371,6 +393,7 @@ export default function Home() {
       minRating: filter.minRating || 0,
       maxRating: filter.maxRating || 13,
       winnerError: filter.winnerError || '',
+      rallyPosition: filter.rallyPosition || 0,
       // Handle time filters
       timeBefore: filter.timeBefore || null,
       timeAfter: filter.timeAfter || null,
@@ -1270,6 +1293,9 @@ export default function Home() {
                                   <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
                                     {shot.shot_label}
                                   </span>
+                                  <span className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs font-medium" title="Rally Position">
+                                    R{getRallyPosition(shot)}
+                                  </span>
                                   <span className="text-xs text-zinc-600 dark:text-zinc-400">
                                     {getPlayerDisplayName(shot.player_id)}
                                   </span>
@@ -1328,6 +1354,9 @@ export default function Home() {
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs font-medium">
                               {shot.shot_label}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-xs font-medium" title="Rally Position">
+                              R{getRallyPosition(shot)}
                             </span>
                             <span className="text-xs text-zinc-600 dark:text-zinc-400">
                               {getPlayerDisplayName(shot.player_id)}

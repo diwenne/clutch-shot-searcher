@@ -16,6 +16,7 @@ export interface ShotFilter {
   maxRating?: number;
   winnerError?: 'winner' | 'error';
   rallyLength?: { min?: number; max?: number };
+  rallyPosition?: number; // 0 = any, 1 = 1st shot, 2 = 2nd shot, etc.
   // Time-based filters
   timeBefore?: TimeFilter;
   timeAfter?: TimeFilter;

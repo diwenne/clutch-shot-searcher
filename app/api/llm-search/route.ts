@@ -39,11 +39,18 @@ TIME-BASED FILTERS:
 - Format: {"timeAfter": {"type": "after", "minutes": X, "seconds": Y}} or {"timeBefore": {"type": "before", "minutes": X, "seconds": Y}}
 - IMPORTANT: You MUST calculate the actual time values based on the video duration provided above. Do the math!
 
+RALLY POSITION:
+- Use rallyPosition to filter by shot position within a rally (1 = first shot, 2 = second shot, etc.)
+- Examples:
+  * "2nd shot of rally was an error" → {"rallyPosition": 2, "winnerError": "error"}
+  * "first shot errors" → {"rallyPosition": 1, "winnerError": "error"}
+  * "third shot drives" → {"rallyPosition": 3, "shotType": ["drive"]}
+
 SEQUENCES:
 - For consecutive shot patterns like "serve followed by smash" or "drive then volley"
 - Format: {"sequence": [{"shotType": ["serve"]}, {"shotType": ["overhead"]}]}
 - Each element in the sequence array is a separate shot filter
-- You can add other filters to each shot in the sequence (player, zone, etc.)
+- You can add other filters to each shot in the sequence (player, zone, rallyPosition, etc.)
 - IMPORTANT: Time filters in sequences apply to ALL shots in the sequence (add to FIRST shot only)
 
 Respond ONLY with valid JSON. Examples:
@@ -56,6 +63,9 @@ Respond ONLY with valid JSON. Examples:
 "cross court drives" → {"shotType": ["drive"], "direction": ["cross/left", "cross/right"]}
 "overhead shots after 5 minutes" → {"shotType": ["overhead"], "timeAfter": {"type": "after", "minutes": 5, "seconds": 0}}
 "serves before 2:30" → {"shotType": ["serve"], "timeBefore": {"type": "before", "minutes": 2, "seconds": 30}}
+"2nd shot of rally was an error" → {"rallyPosition": 2, "winnerError": "error"}
+"first shot errors" → {"rallyPosition": 1, "winnerError": "error"}
+"third shot drives" → {"rallyPosition": 3, "shotType": ["drive"]}
 "serve followed by overhead" → {"sequence": [{"shotType": ["serve"]}, {"shotType": ["overhead"]}]}
 "winning drive then error volley" → {"sequence": [{"shotType": ["drive"], "winnerError": "winner"}, {"shotType": ["volley"], "winnerError": "error"}]}
 "drives in the first 2 minutes then overhead" → {"sequence": [{"shotType": ["drive"], "timeBefore": {"type": "before", "minutes": 2, "seconds": 0}}, {"shotType": ["overhead"]}]}`;

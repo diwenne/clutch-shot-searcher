@@ -21,6 +21,7 @@ interface ShotBlock {
   minRating: number;
   maxRating: number;
   winnerError: string;
+  rallyPosition: number; // 0 = any position, 1 = 1st shot, 2 = 2nd shot, etc.
   // Time filters (can have both before and after)
   timeBefore: TimeFilter | null;
   timeAfter: TimeFilter | null;
@@ -81,6 +82,7 @@ export default function SequenceBuilder({
     minRating: 0,
     maxRating: 13,
     winnerError: '',
+    rallyPosition: 0, // 0 = any position
     timeBefore: null,
     timeAfter: null
   });
@@ -213,6 +215,24 @@ export default function SequenceBuilder({
     );
   };
 
+  // Helper function to calculate rally position for a shot
+  const getRallyPosition = (shot: Shot, shotIndex: number): number => {
+    // Count backwards to find the start of the rally (new_sequence = true)
+    let position = 1;
+    for (let i = shotIndex - 1; i >= 0; i--) {
+      if (shots[i].new_sequence) {
+        break;
+      }
+      // Only count if same rally group
+      if (shots[i].group === shot.group) {
+        position++;
+      } else {
+        break;
+      }
+    }
+    return position;
+  };
+
   const findMatchingSequences = () => {
     if (sequence.length === 0) {
       onSequenceMatch([], 0);
@@ -228,6 +248,7 @@ export default function SequenceBuilder({
       // Check if this slice matches our sequence pattern
       const matches = sequence.every((block, idx) => {
         const shot = potentialMatch[idx];
+        const shotGlobalIndex = i + idx;
 
         // Check shot type
         if (block.shotType !== 'any' && shot.shot_label !== block.shotType) {
@@ -262,6 +283,14 @@ export default function SequenceBuilder({
         // Check rating
         if (shot.shot_rating < block.minRating || shot.shot_rating > block.maxRating) {
           return false;
+        }
+
+        // Check rally position
+        if (block.rallyPosition > 0) {
+          const actualPosition = getRallyPosition(shot, shotGlobalIndex);
+          if (actualPosition !== block.rallyPosition) {
+            return false;
+          }
         }
 
         // Check time filters
@@ -583,6 +612,26 @@ export default function SequenceBuilder({
                                 <option value="">Any</option>
                                 <option value="winner">Winner</option>
                                 <option value="error">Error</option>
+                              </select>
+                            </div>
+
+                            {/* Rally Position */}
+                            <div>
+                              <label className="block text-xs font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                                Rally Position
+                              </label>
+                              <select
+                                value={block.rallyPosition}
+                                onChange={(e) => updateShot(block.id, { rallyPosition: Number(e.target.value) })}
+                                className="w-full px-2 py-1 text-xs bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded"
+                              >
+                                <option value="0">Any Position</option>
+                                <option value="1">1st shot of rally</option>
+                                <option value="2">2nd shot of rally</option>
+                                <option value="3">3rd shot of rally</option>
+                                <option value="4">4th shot of rally</option>
+                                <option value="5">5th shot of rally</option>
+                                <option value="6">6th+ shot of rally</option>
                               </select>
                             </div>
 
