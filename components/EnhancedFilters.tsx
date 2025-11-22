@@ -284,17 +284,6 @@ export default function EnhancedFilters({
               ))}
             </div>
           </div>
-
-          {/* Clear Filters Button */}
-          <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
-            <button
-              onClick={onClear}
-              disabled={!hasActiveFilters()}
-              className="w-full px-4 py-2 bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-md hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-            >
-              Clear All Filters
-            </button>
-          </div>
         </div>
       )}
     </div>

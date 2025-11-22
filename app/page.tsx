@@ -22,6 +22,7 @@ import { serializeShareableState, generateShareURL, deserializeShareableState, v
 export default function Home() {
   const [shots, setShots] = useState<Shot[]>([]);
   const [filteredShots, setFilteredShots] = useState<Shot[]>([]);
+  const [baseFilteredShots, setBaseFilteredShots] = useState<Shot[]>([]); // Shots after filters, before sequence
   const [rallies, setRallies] = useState<Rally[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +205,7 @@ export default function Home() {
         const parsedShots = await parseShotsCSV('/data/detected_shots_v2.csv');
         setShots(parsedShots);
         setFilteredShots(parsedShots);
+        setBaseFilteredShots(parsedShots);
         setShotTypes(getShotTypes(parsedShots));
         setPlayers(getPlayers(parsedShots));
 
@@ -348,12 +350,6 @@ export default function Home() {
     console.log('📊 Total shots:', shots.length);
     console.log('📊 isSequenceMode:', isSequenceMode);
 
-    // Skip filtering if in sequence mode - let SequenceBuilder control filteredShots
-    if (isSequenceMode) {
-      console.log('⏭️ SKIPPING FILTER - Sequence mode is active');
-      return;
-    }
-
     let filtered = shots;
     console.log('Step 0 - Initial:', filtered.length);
 
@@ -425,7 +421,15 @@ export default function Home() {
     console.log('Step 10 - After manual removal:', filtered.length);
 
     console.log('✅ FINAL FILTERED SHOTS:', filtered.length);
-    setFilteredShots(filtered);
+
+    // Always update baseFilteredShots (for SequenceBuilder input)
+    setBaseFilteredShots(filtered);
+
+    // Only update filteredShots if NOT in sequence mode
+    // (in sequence mode, SequenceBuilder controls filteredShots)
+    if (!isSequenceMode) {
+      setFilteredShots(filtered);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shots.length, filters, trajectoryMatchedShots.length, selectedPlayer, manuallyRemovedShots.size, isSequenceMode]);
 
@@ -1431,7 +1435,7 @@ export default function Home() {
           <div className="space-y-4 lg:overflow-y-auto lg:max-h-[calc(100vh-200px)]">
             {/* Sequence Builder (replaces Enhanced Filters) */}
             <SequenceBuilder
-              shots={shots}
+              shots={baseFilteredShots}
               onSequenceMatch={(matchedShots, seqLength) => {
                 setFilteredShots(matchedShots);
                 setSequenceLength(seqLength);
@@ -1455,37 +1459,30 @@ export default function Home() {
               <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
-                    Shot List ({(() => {
-                      if (isSequenceMode) {
-                        // In sequence mode: filteredShots hasn't been filtered by manuallyRemovedSequences yet
-                        return filteredShots.length - (manuallyRemovedSequences.size * sequenceLength);
-                      } else {
-                        // In regular mode: filteredShots is already filtered by the useEffect
-                        return filteredShots.length;
-                      }
-                    })()})
+                    Shot List ({isSequenceMode
+                      ? filteredShots.length - (manuallyRemovedSequences.size * sequenceLength)
+                      : filteredShots.length}/{shots.length})
                   </h2>
                   <div className="flex items-center gap-2">
-                    {filteredShots.length !== shots.length && !isSequenceMode && (
-                      <button
-                        onClick={() => {
-                          clearFilters();
-                          setTrajectoryMatchedShots([]);
-                          setNlpSequence([]);
-                          setSelectedPlayer(null);
-                          setIsSequenceMode(false);
-                          setSequenceLength(0);
-                          setSearchResponse('');
-                          setAnalysisResult('');
-                          setManuallyRemovedShots(new Set());
-                          setManuallyRemovedSequences(new Set());
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg transition-colors"
-                      >
-                        <XMarkIcon className="h-4 w-4" />
-                        Reset Filters
-                      </button>
-                    )}
+                    <button
+                      onClick={() => {
+                        clearFilters();
+                        setTrajectoryMatchedShots([]);
+                        setNlpSequence([]);
+                        setSelectedPlayer(null);
+                        setIsSequenceMode(false);
+                        setSequenceLength(0);
+                        setSearchResponse('');
+                        setAnalysisResult('');
+                        setManuallyRemovedShots(new Set());
+                        setManuallyRemovedSequences(new Set());
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-600 rounded-lg transition-colors"
+                      title="Reset all filters and sequences"
+                    >
+                      <XMarkIcon className="h-4 w-4" />
+                      Reset
+                    </button>
                     <button
                       onClick={handleShare}
                       disabled={filteredShots.length === 0}
