@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     if (mode === 'concatenated') {
       // Create a folder for this export
-      const exportFolderName = `badminton_export_${new Date().toISOString().split('T')[0]}_${shots.length}shots`;
+      const exportFolderName = `padel_export_${new Date().toISOString().split('T')[0]}_${shots.length}shots`;
       const exportFolderPath = path.join(outputDir, exportFolderName);
 
       // Create export folder

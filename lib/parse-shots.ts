@@ -110,7 +110,7 @@ export async function parseShotsCSV(csvPath: string): Promise<Shot[]> {
 
         resolve(shots);
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(error);
       },
     });

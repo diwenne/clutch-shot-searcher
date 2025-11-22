@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Clutch Shot Searcher",
-  description: "Search and explore badminton shots with AI-powered detection and video analysis",
+  description: "AI Studio for Padel",
 };
 
 export default function RootLayout({

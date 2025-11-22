@@ -13,9 +13,11 @@ import RallyTimeline from '@/components/RallyTimeline';
 import EnhancedFilters, { FilterState } from '@/components/EnhancedFilters';
 import StatsDashboard from '@/components/StatsDashboard';
 import ExportDialog from '@/components/ExportDialog';
+import ShareDialog from '@/components/ShareDialog';
 import PlayerSelector from '@/components/PlayerSelector';
 import SequenceBuilder from '@/components/SequenceBuilder';
-import { ChartBarIcon, ArrowDownTrayIcon, XMarkIcon, InformationCircleIcon, CpuChipIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ArrowDownTrayIcon, XMarkIcon, InformationCircleIcon, CpuChipIcon, ShareIcon } from '@heroicons/react/24/outline';
+import { serializeShareableState, generateShareURL, deserializeShareableState, validateSharedState, getShareParamFromURL } from '@/lib/share-state';
 
 export default function Home() {
   const [shots, setShots] = useState<Shot[]>([]);
@@ -44,6 +46,8 @@ export default function Home() {
   const [showStats, setShowStats] = useState(false);
   const [heatmapColorMode, setHeatmapColorMode] = useState<'type' | 'rating' | 'outcome'>('type');
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
+  const [shareURL, setShareURL] = useState('');
   const [searchResponse, setSearchResponse] = useState<string>('');
   const [analysisResult, setAnalysisResult] = useState<string>('');
   const [exportProgress, setExportProgress] = useState<{ percent: number; status: string } | null>(null);
@@ -216,6 +220,126 @@ export default function Home() {
     }
     loadShots();
   }, []);
+
+  // Load shared state from URL parameter
+  useEffect(() => {
+    // Wait for data to load first
+    if (shots.length === 0) return;
+
+    const shareParam = getShareParamFromURL();
+    if (!shareParam) return;
+
+    console.log('🔗 Loading shared state from URL...');
+
+    const sharedState = deserializeShareableState(shareParam);
+    if (!sharedState) {
+      console.error('❌ Invalid share link');
+      alert('This share link is invalid or corrupted. Please check the URL and try again.');
+      return;
+    }
+
+    // Validate the shared state
+    const validation = validateSharedState(sharedState, shots);
+    if (!validation.valid) {
+      console.warn('⚠️ Share state validation warnings:', validation.warnings);
+      if (validation.warnings.length > 0) {
+        alert(`Warning: Some shared data may not match the current dataset:\n${validation.warnings.join('\n')}`);
+      }
+    }
+
+    // Apply shared state
+    console.log('✅ Applying shared state:', sharedState);
+
+    // Apply player names first (before filters that might reference them)
+    if (sharedState.pn) {
+      setPlayerNames(sharedState.pn);
+      console.log('  Applied player names');
+    }
+
+    if (sharedState.rm) {
+      setManuallyRemovedShots(new Set(sharedState.rm));
+      console.log('  Applied removed shots:', sharedState.rm.length);
+    }
+
+    if (sharedState.rmSeq) {
+      setManuallyRemovedSequences(new Set(sharedState.rmSeq));
+      console.log('  Applied removed sequences:', sharedState.rmSeq.length);
+    }
+
+    // Apply sequence state
+    if (sharedState.seq && sharedState.seq.len > 0) {
+      setSequenceLength(sharedState.seq.len);
+      setSequenceNotes(new Map(Object.entries(sharedState.seq.notes)));
+      setIsSequenceMode(true);
+      console.log('  Applied sequence mode with length:', sharedState.seq.len);
+      console.log('  Applied sequence notes:', Object.keys(sharedState.seq.notes).length);
+
+      // Reconstruct filteredShots from saved shot indices
+      if (sharedState.seq.shotIndices && sharedState.seq.shotIndices.length > 0) {
+        const shotIndexSet = new Set(sharedState.seq.shotIndices);
+        const reconstructed = shots.filter(shot => shotIndexSet.has(shot.index));
+
+        // Preserve order from shared state
+        const indexToShot = new Map(reconstructed.map(s => [s.index, s]));
+        const orderedShots = sharedState.seq.shotIndices
+          .map(idx => indexToShot.get(idx))
+          .filter(s => s !== undefined) as Shot[];
+
+        console.log('  ✅ Reconstructed filtered shots from indices:', orderedShots.length, 'shots');
+        console.log('  First 5 reconstructed indices:', orderedShots.slice(0, 5).map(s => s.index));
+        setFilteredShots(orderedShots);
+        console.log('  ✅ setFilteredShots called with', orderedShots.length, 'shots');
+      } else {
+        console.warn('  ⚠️ No shot indices in shared sequence - falling back to filter application');
+        // Fallback: apply filters manually (old behavior)
+        let filtered = shots;
+
+        if (sharedState.p) {
+          filtered = filtered.filter((shot) => shot.player_id === sharedState.p);
+        }
+        if (sharedState.f) {
+          const f = sharedState.f;
+          if (f.shotTypes?.length > 0) filtered = filtered.filter((shot) => f.shotTypes.includes(shot.shot_label));
+          if (f.players?.length > 0) filtered = filtered.filter((shot) => f.players.includes(shot.player_id));
+          if (f.zones?.length > 0) filtered = filtered.filter((shot) => f.zones.includes(shot.zone_shuttle));
+          if (f.directions?.length > 0) filtered = filtered.filter((shot) => f.directions.includes(shot.shot_direction));
+          if (f.courtSide) filtered = filtered.filter((shot) => shot.player_court_side === f.courtSide);
+          if (f.minRating !== undefined && f.maxRating !== undefined) {
+            filtered = filtered.filter((shot) => shot.shot_rating >= f.minRating && shot.shot_rating <= f.maxRating);
+          }
+          if (f.winnerError) filtered = filtered.filter((shot) => shot.winner_error === f.winnerError);
+        }
+        setFilteredShots(filtered);
+        console.log('  Applied filtered shots (fallback):', filtered.length);
+      }
+
+      // Also set the filters/player so UI shows them
+      if (sharedState.f) setFilters(sharedState.f);
+      if (sharedState.p) setSelectedPlayer(sharedState.p);
+
+      // TODO: Apply sequence blocks to SequenceBuilder when it exposes state setting
+    } else {
+      // NOT in sequence mode - apply filters normally
+      // Apply these AFTER sequence state to ensure filter useEffect triggers
+      if (sharedState.f) {
+        setFilters(sharedState.f);
+        console.log('  Applied filters (normal mode)');
+      }
+
+      if (sharedState.p) {
+        setSelectedPlayer(sharedState.p);
+        console.log('  Applied selected player (normal mode):', sharedState.p);
+      }
+    }
+
+    console.log('✅ Shared state loaded successfully!');
+  }, [shots]); // Only run when shots are loaded
+
+  // Monitor filteredShots changes
+  useEffect(() => {
+    console.log('📊 FILTERED SHOTS CHANGED:', filteredShots.length, 'shots');
+    console.log('   Stack trace:', new Error().stack?.split('\n').slice(2, 5).join('\n'));
+  }, [filteredShots]);
 
   // Apply filters
   useEffect(() => {
@@ -852,6 +976,49 @@ export default function Home() {
     }
   };
 
+  // Generate shareable link
+  const generateShareableLink = (): string | null => {
+    try {
+      console.log('🔗 GENERATING SHARE LINK');
+      console.log('  filteredShots.length:', filteredShots.length);
+      console.log('  isSequenceMode:', isSequenceMode);
+      console.log('  sequenceLength:', sequenceLength);
+      console.log('  filters:', filters);
+      console.log('  First 5 shot indices:', filteredShots.slice(0, 5).map(s => s.index));
+
+      const encodedState = serializeShareableState({
+        filters,
+        selectedPlayer,
+        sequenceLength,
+        sequenceNotes,
+        manuallyRemovedShots,
+        manuallyRemovedSequences,
+        playerNames,
+        isSequenceMode,
+        filteredShots, // Pass the actual filtered shots array
+        // TODO: Add sequence blocks when SequenceBuilder exposes its state
+      });
+
+      const shareURL = generateShareURL(encodedState);
+      console.log('✅ Generated share link:', shareURL.length, 'characters');
+      return shareURL;
+    } catch (error) {
+      console.error('❌ Failed to generate share link:', error);
+      return null;
+    }
+  };
+
+  // Handle share button click
+  const handleShare = () => {
+    const url = generateShareableLink();
+    if (url) {
+      setShareURL(url);
+      setShowShareDialog(true);
+    } else {
+      alert('Failed to generate share link. Please try again.');
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
@@ -1320,6 +1487,15 @@ export default function Home() {
                       </button>
                     )}
                     <button
+                      onClick={handleShare}
+                      disabled={filteredShots.length === 0}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
+                      title="Share filtered shots and notes"
+                    >
+                      <ShareIcon className="h-4 w-4" />
+                      Share
+                    </button>
+                    <button
                       onClick={() => setShowExportDialog(true)}
                       disabled={filteredShots.length === 0}
                       className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:bg-zinc-300 disabled:cursor-not-allowed rounded-lg transition-colors"
@@ -1655,6 +1831,14 @@ export default function Home() {
           />
         );
       })()}
+
+      {/* Share Dialog */}
+      {showShareDialog && (
+        <ShareDialog
+          shareURL={shareURL}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
 
       </section>
     </div>
