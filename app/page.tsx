@@ -403,12 +403,16 @@ export default function Home() {
       console.log('Step 7 - After court side filter:', filtered.length, 'courtSide:', filters.courtSide);
     }
 
-    // Rating
+    // Rating (only apply if not default range)
     const beforeRating = filtered.length;
-    filtered = filtered.filter(
-      (shot) => shot.shot_rating >= filters.minRating && shot.shot_rating <= filters.maxRating
-    );
-    console.log('Step 8 - After rating filter:', filtered.length, 'from', beforeRating, `(${filters.minRating}-${filters.maxRating})`);
+    if (filters.minRating > 0 || filters.maxRating < 13) {
+      filtered = filtered.filter(
+        (shot) => shot.shot_rating >= filters.minRating && shot.shot_rating <= filters.maxRating
+      );
+      console.log('Step 8 - After rating filter:', filtered.length, 'from', beforeRating, `(${filters.minRating}-${filters.maxRating})`);
+    } else {
+      console.log('Step 8 - Skipping rating filter (default range 0-13)');
+    }
 
     // Winner/Error
     if (filters.winnerError) {
@@ -985,9 +989,10 @@ export default function Home() {
     try {
       console.log('🔗 GENERATING SHARE LINK');
       console.log('  filteredShots.length:', filteredShots.length);
+      console.log('  baseFilteredShots.length:', baseFilteredShots.length);
       console.log('  isSequenceMode:', isSequenceMode);
       console.log('  sequenceLength:', sequenceLength);
-      console.log('  filters:', filters);
+      console.log('  filters:', JSON.stringify(filters, null, 2));
       console.log('  First 5 shot indices:', filteredShots.slice(0, 5).map(s => s.index));
 
       const encodedState = serializeShareableState({
@@ -1455,7 +1460,7 @@ export default function Home() {
             />
 
             {/* Shot List */}
-            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden">
+            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden" key={`shotlist-${filteredShots.length}`}>
               <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
