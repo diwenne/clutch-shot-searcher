@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react';
 import { PlusIcon, XMarkIcon, ArrowRightIcon, PlayIcon, ChevronDownIcon, ChevronUpIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { Shot } from '@/types/shot-data';
 
-interface TimeFilter {
+export interface TimeFilter {
   type: 'before' | 'after';
   minutes: number;
   seconds: number;
 }
 
-interface ShotBlock {
+export interface ShotBlock {
   id: string;
   shotType: string; // 'serve', 'drive', 'volley', 'lob', 'overhead', 'any'
   // Advanced filters (optional)
@@ -30,6 +30,7 @@ interface ShotBlock {
 interface SequenceBuilderProps {
   shots: Shot[];
   onSequenceMatch: (matchingShots: Shot[], sequenceLength: number) => void;
+  onSequenceBlocksChange?: (blocks: ShotBlock[]) => void; // Callback for sequence blocks
   availablePlayers: string[];
   playerNames: Record<string, string>;
   availableShotTypes: string[];
@@ -51,6 +52,7 @@ const SHOT_TYPE_COLORS: Record<string, string> = {
 export default function SequenceBuilder({
   shots,
   onSequenceMatch,
+  onSequenceBlocksChange,
   availablePlayers,
   playerNames,
   availableShotTypes,
@@ -71,6 +73,13 @@ export default function SequenceBuilder({
       setIsExpanded(true); // Auto-expand when NLP populates
     }
   }, [nlpSequence]);
+
+  // Notify parent when sequence blocks change
+  useEffect(() => {
+    if (onSequenceBlocksChange) {
+      onSequenceBlocksChange(sequence);
+    }
+  }, [sequence, onSequenceBlocksChange]);
 
   const createBlock = (shotType: string): ShotBlock => ({
     id: Date.now().toString() + Math.random(),

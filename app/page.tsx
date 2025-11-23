@@ -76,6 +76,7 @@ export default function Home() {
   const [sequenceLength, setSequenceLength] = useState<number>(0);
   const [isSequenceMode, setIsSequenceMode] = useState(false);
   const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
+  const [sequenceBlocks, setSequenceBlocks] = useState<any[]>([]); // Sequence blocks from SequenceBuilder
 
   // Manually removed shots/sequences (temporary - resets when filters change)
   const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
@@ -319,7 +320,12 @@ export default function Home() {
       if (sharedState.f) setFilters(sharedState.f);
       if (sharedState.p) setSelectedPlayer(sharedState.p);
 
-      // TODO: Apply sequence blocks to SequenceBuilder when it exposes state setting
+      // Apply sequence blocks to SequenceBuilder
+      if (sharedState.seq.blocks && sharedState.seq.blocks.length > 0) {
+        setSequenceBlocks(sharedState.seq.blocks);
+        setNlpSequence(sharedState.seq.blocks); // This will populate the SequenceBuilder UI
+        console.log('  Applied sequence blocks:', sharedState.seq.blocks.length);
+      }
     } else {
       // NOT in sequence mode - apply filters normally
       // Apply these AFTER sequence state to ensure filter useEffect triggers
@@ -1005,7 +1011,7 @@ export default function Home() {
         playerNames,
         isSequenceMode,
         filteredShots, // Pass the actual filtered shots array
-        // TODO: Add sequence blocks when SequenceBuilder exposes its state
+        sequenceBlocks, // Pass sequence blocks
       });
 
       const shareURL = generateShareURL(encodedState);
@@ -1452,6 +1458,9 @@ export default function Home() {
                 } else {
                   setSearchResponse('No sequences found matching your pattern');
                 }
+              }}
+              onSequenceBlocksChange={(blocks) => {
+                setSequenceBlocks(blocks);
               }}
               availablePlayers={players}
               playerNames={playerNames}
