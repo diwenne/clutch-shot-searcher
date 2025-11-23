@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PlusIcon, XMarkIcon, ArrowRightIcon, PlayIcon, ChevronDownIcon, ChevronUpIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { Shot } from '@/types/shot-data';
 
@@ -35,6 +35,7 @@ interface SequenceBuilderProps {
   playerNames: Record<string, string>;
   availableShotTypes: string[];
   nlpSequence?: ShotBlock[]; // Sequence from NLP query
+  autoExecute?: boolean; // Auto-execute search when nlpSequence is loaded
 }
 
 const ZONES = ['zone-0', 'zone-1', 'zone-2', 'zone-3', 'zone-4', 'zone-5'];
@@ -56,7 +57,8 @@ export default function SequenceBuilder({
   availablePlayers,
   playerNames,
   availableShotTypes,
-  nlpSequence
+  nlpSequence,
+  autoExecute = false
 }: SequenceBuilderProps) {
   const [sequence, setSequence] = useState<ShotBlock[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -80,6 +82,74 @@ export default function SequenceBuilder({
       onSequenceBlocksChange(sequence);
     }
   }, [sequence, onSequenceBlocksChange]);
+
+  // Auto-execute search when sequence is populated from shared link
+  const hasAutoExecutedRef = React.useRef(false);
+  useEffect(() => {
+    if (autoExecute && sequence.length > 0 && !hasAutoExecutedRef.current && shots.length > 0) {
+      console.log('🚀 Auto-executing sequence search...');
+      hasAutoExecutedRef.current = true;
+      // Use setTimeout to ensure state is fully updated
+      setTimeout(() => {
+        // Call findMatchingSequences (defined below)
+        if (sequence.length === 0) {
+          onSequenceMatch([], 0);
+          return;
+        }
+
+        const results: Shot[] = [];
+        for (let i = 0; i < shots.length; i++) {
+          const potentialMatch = shots.slice(i, i + sequence.length);
+          if (potentialMatch.length !== sequence.length) break;
+
+          let matches = true;
+          for (let j = 0; j < sequence.length; j++) {
+            const shot = potentialMatch[j];
+            const block = sequence[j];
+
+            // Check shot type
+            if (block.shotType !== 'any' && shot.shot_label !== block.shotType) {
+              matches = false;
+              break;
+            }
+
+            // Check other filters if they exist
+            if (block.players.length > 0 && !block.players.includes(shot.player_id)) {
+              matches = false;
+              break;
+            }
+            if (block.zones.length > 0 && !block.zones.includes(shot.zone_shuttle)) {
+              matches = false;
+              break;
+            }
+            if (block.directions.length > 0 && !block.directions.includes(shot.shot_direction)) {
+              matches = false;
+              break;
+            }
+            if (block.courtSide && shot.player_court_side !== block.courtSide) {
+              matches = false;
+              break;
+            }
+            if (shot.shot_rating < block.minRating || shot.shot_rating > block.maxRating) {
+              matches = false;
+              break;
+            }
+            if (block.winnerError && shot.winner_error !== block.winnerError) {
+              matches = false;
+              break;
+            }
+          }
+
+          if (matches) {
+            results.push(...potentialMatch);
+          }
+        }
+
+        onSequenceMatch(results, sequence.length);
+        console.log('✅ Auto-executed search, found:', results.length, 'shots');
+      }, 200);
+    }
+  }, [autoExecute, sequence, shots, onSequenceMatch]);
 
   const createBlock = (shotType: string): ShotBlock => ({
     id: Date.now().toString() + Math.random(),

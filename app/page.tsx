@@ -77,6 +77,7 @@ export default function Home() {
   const [isSequenceMode, setIsSequenceMode] = useState(false);
   const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
   const [sequenceBlocks, setSequenceBlocks] = useState<any[]>([]); // Sequence blocks from SequenceBuilder
+  const [autoExecuteSequence, setAutoExecuteSequence] = useState(false); // Trigger auto-execute from shared link
 
   // Manually removed shots/sequences (temporary - resets when filters change)
   const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
@@ -324,6 +325,7 @@ export default function Home() {
       if (sharedState.seq.blocks && sharedState.seq.blocks.length > 0) {
         setSequenceBlocks(sharedState.seq.blocks);
         setNlpSequence(sharedState.seq.blocks); // This will populate the SequenceBuilder UI
+        setAutoExecuteSequence(true); // Trigger auto-execute
         console.log('  Applied sequence blocks:', sharedState.seq.blocks.length);
       }
     } else {
@@ -1458,6 +1460,7 @@ export default function Home() {
                 } else {
                   setSearchResponse('No sequences found matching your pattern');
                 }
+                setAutoExecuteSequence(false); // Reset after execution
               }}
               onSequenceBlocksChange={(blocks) => {
                 setSequenceBlocks(blocks);
@@ -1466,6 +1469,7 @@ export default function Home() {
               playerNames={playerNames}
               availableShotTypes={shotTypes}
               nlpSequence={nlpSequence}
+              autoExecute={autoExecuteSequence}
             />
 
             {/* Shot List */}
