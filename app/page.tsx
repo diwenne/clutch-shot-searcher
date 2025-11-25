@@ -989,7 +989,7 @@ export default function Home() {
       console.error('Export error:', error);
       setSearchResponse(`❌ Export failed: ${error.message}`);
       setExportProgress(null);
-      alert(`Export failed: ${error.message}\n\nMake sure FFmpeg is installed: brew install ffmpeg`);
+      alert(`Export failed: ${error.message}\n\nMake sure FFmpeg is installed:\nmacOS: brew install ffmpeg\nLinux: sudo apt install ffmpeg`);
     }
   };
 
@@ -1478,7 +1478,7 @@ export default function Home() {
 
             {/* Shot List */}
             <div className="bg-white dark:bg-zinc-800 rounded-lg shadow overflow-hidden" key={`shotlist-${filteredShots.length}`}>
-              <div className="sticky top-0 z-10 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
+              <div className="sticky top-0 z-20 p-4 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
                 <div className="flex items-center justify-between mb-2">
                   <h2 className="font-semibold text-zinc-900 dark:text-white">
                     Shot List ({isSequenceMode
