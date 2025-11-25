@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { PlusIcon, XMarkIcon, ArrowRightIcon, PlayIcon, ChevronDownIcon, ChevronUpIcon, AdjustmentsHorizontalIcon } from '@heroicons/react/24/outline';
 import { Shot } from '@/types/shot-data';
 
@@ -31,6 +31,7 @@ interface SequenceBuilderProps {
   shots: Shot[];
   onSequenceMatch: (matchingShots: Shot[], sequenceLength: number) => void;
   onSequenceBlocksChange?: (blocks: ShotBlock[]) => void; // Callback for sequence blocks
+  onAddBlockRef?: (addBlock: (block: Partial<ShotBlock>) => void) => void; // Expose addBlock function
   availablePlayers: string[];
   playerNames: Record<string, string>;
   availableShotTypes: string[];
@@ -54,6 +55,7 @@ export default function SequenceBuilder({
   shots,
   onSequenceMatch,
   onSequenceBlocksChange,
+  onAddBlockRef,
   availablePlayers,
   playerNames,
   availableShotTypes,
@@ -84,7 +86,7 @@ export default function SequenceBuilder({
   }, [sequence, onSequenceBlocksChange]);
 
   // Auto-execute search when sequence is populated from shared link
-  const hasAutoExecutedRef = React.useRef(false);
+  const hasAutoExecutedRef = useRef(false);
   useEffect(() => {
     if (autoExecute && sequence.length > 0 && !hasAutoExecutedRef.current && shots.length > 0) {
       console.log('🚀 Auto-executing sequence search...');
@@ -165,6 +167,46 @@ export default function SequenceBuilder({
     timeBefore: null,
     timeAfter: null
   });
+
+  // Function to add a block or modify last block programmatically (e.g., from heatmap)
+  const addBlock = useCallback((blockData: Partial<ShotBlock>) => {
+    setSequence((prev) => {
+      if (prev.length === 0) {
+        // No blocks yet - create a new "any" block with the data
+        const newBlock: ShotBlock = {
+          ...createBlock('any'),
+          ...blockData,
+          id: Date.now().toString() + Math.random(),
+        };
+        return [newBlock];
+      } else {
+        // Has blocks - modify the last block
+        const updated = [...prev];
+        const lastIndex = updated.length - 1;
+        const lastBlock = updated[lastIndex];
+
+        // Merge the new data into the last block
+        updated[lastIndex] = {
+          ...lastBlock,
+          ...blockData,
+          // Merge arrays (e.g., zones)
+          zones: blockData.zones ? [...new Set([...lastBlock.zones, ...blockData.zones])] : lastBlock.zones,
+          players: blockData.players ? [...new Set([...lastBlock.players, ...blockData.players])] : lastBlock.players,
+          directions: blockData.directions ? [...new Set([...lastBlock.directions, ...blockData.directions])] : lastBlock.directions,
+        };
+
+        return updated;
+      }
+    });
+    setIsExpanded(true); // Auto-expand to show the block
+  }, []);
+
+  // Expose addBlock function to parent via ref callback
+  useEffect(() => {
+    if (onAddBlockRef) {
+      onAddBlockRef(addBlock);
+    }
+  }, [onAddBlockRef, addBlock]);
 
   const handleDragStartFromPalette = (shotType: string) => {
     setDraggedType(shotType);

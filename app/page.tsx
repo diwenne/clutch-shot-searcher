@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Shot, Rally } from '@/types/shot-data';
 import { parseShotsCSV, getShotTypes, getPlayers } from '@/lib/parse-shots';
 import { ShotFilter } from '@/lib/ollama-client';
@@ -78,6 +78,7 @@ export default function Home() {
   const [nlpSequence, setNlpSequence] = useState<any[]>([]); // Sequence from NLP
   const [sequenceBlocks, setSequenceBlocks] = useState<any[]>([]); // Sequence blocks from SequenceBuilder
   const [autoExecuteSequence, setAutoExecuteSequence] = useState(false); // Trigger auto-execute from shared link
+  const addSequenceBlockRef = useRef<((block: Partial<any>) => void) | null>(null); // Ref to addBlock function
 
   // Manually removed shots/sequences (temporary - resets when filters change)
   const [manuallyRemovedShots, setManuallyRemovedShots] = useState<Set<number>>(new Set());
@@ -863,14 +864,14 @@ export default function Home() {
     setTrajectoryMatchedShots([]);
   };
 
-  // Handle zone click on heatmap
+  // Handle zone click on heatmap - add to SequenceBuilder
   const handleZoneClick = (zone: string) => {
-    setFilters((prev) => ({
-      ...prev,
-      zones: prev.zones.includes(zone)
-        ? prev.zones.filter((z) => z !== zone)
-        : [...prev.zones, zone],
-    }));
+    if (addSequenceBlockRef.current) {
+      addSequenceBlockRef.current({
+        shotType: 'any',
+        zones: [zone],
+      });
+    }
   };
 
   // Clear filters
@@ -1464,6 +1465,9 @@ export default function Home() {
               }}
               onSequenceBlocksChange={(blocks) => {
                 setSequenceBlocks(blocks);
+              }}
+              onAddBlockRef={(addBlockFn) => {
+                addSequenceBlockRef.current = addBlockFn;
               }}
               availablePlayers={players}
               playerNames={playerNames}
