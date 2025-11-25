@@ -45,44 +45,67 @@ export async function POST(request: NextRequest) {
       // Create a concatenated video
       const outputFileName = `concatenated_${shots.length}_shots.mp4`;
       const outputPath = path.join(exportFolderPath, outputFileName);
-      const filterComplex = [];
-      const inputs = [];
 
       console.log(`Processing ${shots.length} shots for concatenation...`);
 
-      // Build FFmpeg filter complex for concatenation
+      // Create concat file for FFmpeg - much faster than filter_complex
+      const concatFileName = `concat_${timestamp}.txt`;
+      const concatFilePath = path.join(exportFolderPath, concatFileName);
+      const concatLines = [];
+
+      // First, extract individual segments without re-encoding
+      const segmentPaths = [];
       for (let i = 0; i < shots.length; i++) {
         const shot = shots[i];
         const start = shot.startTime || shot.timestamp;
         const end = shot.endTime;
         const duration = end ? (end - start) : (shot.duration || 3);
 
-        // Extract each clip and scale/pad to same size
-        filterComplex.push(
-          `[0:v]trim=start=${start}:duration=${duration},setpts=PTS-STARTPTS,scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2[v${i}]`
-        );
-        filterComplex.push(
-          `[0:a]atrim=start=${start}:duration=${duration},asetpts=PTS-STARTPTS[a${i}]`
-        );
-        inputs.push(`[v${i}][a${i}]`);
+        const segmentPath = path.join(exportFolderPath, `segment_${i}.mp4`);
+        segmentPaths.push(segmentPath);
+
+        // Extract segment using copy codec (no re-encoding) - MUCH faster
+        const extractCmd = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c copy -avoid_negative_ts make_zero -y "${segmentPath}"`;
+
+        console.log(`Extracting segment ${i + 1}/${shots.length}...`);
+        try {
+          await execAsync(extractCmd, { maxBuffer: 1024 * 1024 * 50 });
+        } catch (error: any) {
+          console.error(`Error extracting segment ${i}:`, error.message);
+          throw error;
+        }
+
+        concatLines.push(`file '${path.basename(segmentPath)}'`);
       }
 
-      // Concatenate all clips
-      const concatFilter = `${inputs.join('')}concat=n=${shots.length}:v=1:a=1[outv][outa]`;
-      filterComplex.push(concatFilter);
+      // Write concat file
+      await writeFile(concatFilePath, concatLines.join('\n'));
 
-      const filterComplexStr = filterComplex.join(';');
+      // Concatenate all segments using concat demuxer (fastest method)
+      const command = `ffmpeg -f concat -safe 0 -i "${concatFilePath}" -c copy -y "${outputPath}"`;
 
-      // Execute FFmpeg command
-      const command = `ffmpeg -i "${inputVideoPath}" -filter_complex "${filterComplexStr}" -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 23 -c:a aac -y "${outputPath}"`;
-
-      console.log('Executing FFmpeg...');
+      console.log('Concatenating segments...');
       try {
         const { stdout, stderr } = await execAsync(command, { maxBuffer: 1024 * 1024 * 50 }); // 50MB buffer
         console.log('FFmpeg completed successfully');
       } catch (error: any) {
         console.error('FFmpeg error:', error.stderr || error.message);
         throw new Error(`FFmpeg processing failed: ${error.message}`);
+      }
+
+      // Clean up temporary segment files and concat file
+      console.log('Cleaning up temporary files...');
+      for (const segmentPath of segmentPaths) {
+        try {
+          await unlink(segmentPath);
+        } catch (e) {
+          console.warn(`Could not delete segment: ${segmentPath}`);
+        }
+      }
+      try {
+        await unlink(concatFilePath);
+      } catch (e) {
+        console.warn(`Could not delete concat file: ${concatFilePath}`);
       }
 
       // Generate documentation
@@ -136,7 +159,8 @@ export async function POST(request: NextRequest) {
         const outputFileName = `shot_${shot.index}_${timestamp}.mp4`;
         const outputPath = path.join(outputDir, outputFileName);
 
-        const command = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c:v libx264 -preset fast -crf 23 -c:a aac -y "${outputPath}"`;
+        // Use copy codec for much faster extraction (no re-encoding)
+        const command = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c copy -avoid_negative_ts make_zero -y "${outputPath}"`;
 
         console.log(`Exporting shot ${i + 1}/${shots.length}...`);
         try {
