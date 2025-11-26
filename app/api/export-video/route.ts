@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
         throw new Error(`FFmpeg processing failed: ${error.message}`);
       }
 
-      // Clean up temporary segment files and concat file
+      // Clean up temporary segment files and concat file (but keep the final video)
       console.log('Cleaning up temporary files...');
       for (const segmentPath of segmentPaths) {
         try {
@@ -114,6 +114,9 @@ export async function POST(request: NextRequest) {
       const documentation = generateDocumentation(shots, mode, outputFileName, sequenceLength, sequenceMetadata);
       await writeFile(docPath, documentation);
 
+      // Get file stats before zipping
+      const fileStats = await import('fs').then(m => m.promises.stat(outputPath));
+
       // Create a zip file using native zip command
       const zipFileName = `${exportFolderName}.zip`;
       const zipPath = path.join(outputDir, zipFileName);
@@ -128,10 +131,9 @@ export async function POST(request: NextRequest) {
         throw new Error(`Failed to create zip file: ${error.message}`);
       }
 
-      const fileStats = await import('fs').then(m => m.promises.stat(outputPath));
       const zipStats = await import('fs').then(m => m.promises.stat(zipPath));
 
-      // Clean up the unzipped folder
+      // Clean up the unzipped folder after zip is created
       await rm(exportFolderPath, { recursive: true, force: true });
 
       return NextResponse.json({
