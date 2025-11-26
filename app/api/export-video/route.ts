@@ -7,7 +7,7 @@ import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
 
-export const maxDuration = 300; // 5 minutes timeout
+export const maxDuration = 1200; // 20 minutes timeout (matches nginx)
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -32,8 +32,8 @@ export async function POST(request: NextRequest) {
 
     const timestamp = Date.now();
 
-    if (mode === 'concatenated') {
-      // Create a folder for this export
+    // Always export as concatenated (mode parameter kept for backwards compatibility)
+    // Create a folder for this export
       const exportFolderName = `padel_export_${new Date().toISOString().split('T')[0]}_${shots.length}shots`;
       const exportFolderPath = path.join(outputDir, exportFolderName);
 
@@ -143,58 +143,6 @@ export async function POST(request: NextRequest) {
         videoSize: fileStats.size,
         message: `Successfully exported ${shots.length} shots as concatenated video`
       });
-
-    } else {
-      // Export separate videos
-      const exportedFiles = [];
-      const timestamp = Date.now();
-
-      console.log(`Processing ${shots.length} shots separately...`);
-
-      for (let i = 0; i < shots.length; i++) {
-        const shot = shots[i];
-        const start = shot.startTime || shot.timestamp;
-        const end = shot.endTime;
-        const duration = end ? (end - start) : (shot.duration || 3);
-        const outputFileName = `shot_${shot.index}_${timestamp}.mp4`;
-        const outputPath = path.join(outputDir, outputFileName);
-
-        // Use copy codec for much faster extraction (no re-encoding)
-        const command = `ffmpeg -i "${inputVideoPath}" -ss ${start} -t ${duration} -c copy -avoid_negative_ts make_zero -y "${outputPath}"`;
-
-        console.log(`Exporting shot ${i + 1}/${shots.length}...`);
-        try {
-          await execAsync(command, { maxBuffer: 1024 * 1024 * 50 });
-        } catch (error: any) {
-          console.error(`Error exporting shot ${shot.index}:`, error.message);
-          continue; // Skip failed shots
-        }
-
-        const fileStats = await import('fs').then(m => m.promises.stat(outputPath));
-
-        exportedFiles.push({
-          shotIndex: shot.index,
-          url: `/exports/${outputFileName}`,
-          filename: outputFileName,
-          shotType: shot.shot_label,
-          timestamp: start,
-          fileSize: fileStats.size
-        });
-      }
-
-      // Generate documentation
-      const docFileName = `export_${timestamp}_info.txt`;
-      const docPath = path.join(outputDir, docFileName);
-      const documentation = generateDocumentation(shots, mode);
-      await writeFile(docPath, documentation);
-
-      return NextResponse.json({
-        success: true,
-        files: exportedFiles,
-        docUrl: `/exports/${docFileName}`,
-        message: `Successfully exported ${exportedFiles.length} separate video files`
-      });
-    }
 
   } catch (error: any) {
     console.error('Export error:', error);

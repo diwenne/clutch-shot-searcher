@@ -899,15 +899,15 @@ export default function Home() {
     try {
       setSearchResponse(`Processing ${selectedShots.length} shots...`);
 
-      // Simulate realistic progress
+      // Simulate realistic progress - most time is spent extracting segments
       const progressInterval = setInterval(() => {
         setExportProgress(prev => {
           if (!prev) return null;
-          const newPercent = Math.min(prev.percent + Math.random() * 3, 90);
-          let status = 'Processing video with FFmpeg...';
-          if (newPercent < 30) status = 'Extracting clips...';
-          else if (newPercent < 60) status = 'Concatenating shots...';
-          else if (newPercent < 90) status = 'Encoding final video...';
+          const newPercent = Math.min(prev.percent + Math.random() * 2, 95);
+          let status = 'Extracting video segments...';
+          if (newPercent < 80) status = `Extracting segments... (${Math.floor((newPercent / 80) * selectedShots.length)}/${selectedShots.length})`;
+          else if (newPercent < 90) status = 'Concatenating segments...';
+          else if (newPercent < 95) status = 'Creating zip file...';
           return { percent: Math.floor(newPercent), status };
         });
       }, 500);
