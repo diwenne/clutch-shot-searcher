@@ -81,8 +81,9 @@ export async function POST(request: NextRequest) {
       // Write concat file
       await writeFile(concatFilePath, concatLines.join('\n'));
 
-      // Concatenate all segments using concat demuxer (fastest method)
-      const command = `ffmpeg -f concat -safe 0 -i "${concatFilePath}" -c copy -y "${outputPath}"`;
+      // Concatenate all segments - re-encode to ensure compatibility
+      // Using fast preset for speed while maintaining quality
+      const command = `ffmpeg -f concat -safe 0 -i "${concatFilePath}" -c:v libx264 -preset fast -crf 23 -c:a aac -y "${outputPath}"`;
 
       console.log('Concatenating segments...');
       try {
