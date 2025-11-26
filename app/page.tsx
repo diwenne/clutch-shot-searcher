@@ -1859,6 +1859,11 @@ export default function Home() {
         />
       )}
 
+      {/* Build Version */}
+      <div className="fixed bottom-2 left-2 text-xs text-zinc-400 dark:text-zinc-600 font-mono">
+        v1.2.0
+      </div>
+
       </section>
     </div>
   );
